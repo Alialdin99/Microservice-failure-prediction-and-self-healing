@@ -14,7 +14,7 @@ class MicroserviceEnv(gym.Env):
         # Action and observation spaces
         self.action_space = spaces.Discrete(3)  # 0=down, 1=nothing, 2=up
         self.observation_space = spaces.Box(
-            low=0, high=2**63, shape=(5,), dtype=np.float32
+            low=0, high=2**63, shape=(6,), dtype=np.float32
         )
         
         # Kubernetes setup
@@ -118,6 +118,7 @@ class MicroserviceEnv(gym.Env):
             cpu_usage_percent = float(self.prom.custom_query(queries["cpu_usage_percent"])[0]['value'][1]) if self.prom.custom_query(queries["cpu_usage_percent"]) else 0.0
             memory = float(self.prom.custom_query(queries["memory"])[0]['value'][1]) if self.prom.custom_query(queries["memory"]) else 0.0
             avg_request_latency = float(self.prom.custom_query(queries["avg_request_latency"])[0]['value'][1]) if self.prom.custom_query(queries["avg_request_latency"]) else 0.0
+            
             request_error_rate = float(self.prom.custom_query(queries["request_error_rate"])[0]['value'][1]) if self.prom.custom_query(queries["request_error_rate"]) else 0.0
             pod_restarts = float(self.prom.custom_query(queries["pod_restarts"])[0]['value'][1]) if self.prom.custom_query(queries["pod_restarts"]) else 0.0
             pod_count = self._get_current_pods()

@@ -2,19 +2,9 @@ import numpy as np
 class RewardCalculator:
     def calculate_reward(self, state, action, next_state):
         # Extract relevant metrics from states
-        cpu_usage_percent = state["cpu_usage_percent"]
-        memory = state["memory"]
-        avg_request_latency = state["avg_request_latency"]
-        request_error_rate = state["request_error_rate"]
-        pod_restarts = state["pod_restarts"]
-        pod_count = state["pod_count"]
-        
-        next_cpu_usage_percent = next_state["cpu_usage_percent"]
-        next_memory = next_state["memory"]
-        next_avg_request_latency = next_state["avg_request_latency"]
-        next_request_error_rate = next_state["request_error_rate"]
-        next_pod_restarts = next_state["pod_restarts"]
-        next_pod_count = next_state["pod_count"]
+        cpu_usage_percent, memory, avg_request_latency, request_error_rate, pod_restarts, pod_count = state
+
+        next_cpu_usage_percent, next_memory, next_avg_request_latency, next_request_error_rate, next_pod_restarts, next_pod_count = next_state
         
         reward = 0
         
