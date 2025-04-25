@@ -4,7 +4,7 @@ import time
 from gymnasium import spaces
 from kubernetes import client, config
 from prometheus_api_client import PrometheusConnect
-from reward import RewardCalculator
+# from reward import RewardCalculator
 from kubernetes.client.rest import ApiException as KubernetesException
 
 class MicroserviceEnv(gym.Env):
@@ -24,7 +24,7 @@ class MicroserviceEnv(gym.Env):
         self.namespace = "default"
         
         # Prometheus setup
-        self.prom = PrometheusConnect(url="http://127.0.0.1:39005")
+        self.prom = PrometheusConnect(url="http://127.0.0.1:37891")
         self.metric_window = "30s"  # Metrics averaging window
         
         # Time control
@@ -32,7 +32,7 @@ class MicroserviceEnv(gym.Env):
         
         # Initial seed
         self.np_random = None
-        self.reward_calculator = RewardCalculator()
+        # self.reward_calculator = RewardCalculator()
 
     def reset(self, seed=None, options=None):
         # Initialize RNG
@@ -136,8 +136,8 @@ class MicroserviceEnv(gym.Env):
             return np.array([avg_request_latency, request_error_rate, cpu_usage_percent, pod_restarts, pod_count], dtype=np.float32)
         except Exception as e:
             print(f"Error in metric: {str(e)}")
-            return np.zeros(...)
-
+            return np.zeros(5, dtype=np.float32)
+        
     def _calculate_reward(self, prev_state: np.ndarray, current_state: np.ndarray) -> float:
         # Unpack states
         prev_latency, prev_errors, prev_cpu, prev_replicas, prev_restarts = prev_state
