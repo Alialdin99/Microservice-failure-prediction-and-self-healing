@@ -52,14 +52,14 @@ class MicroserviceEnv(gym.Env):
             # 1. Take scaling action
             current_pods = self._get_current_pods()
             new_pods = current_pods
+            state = self._get_state()
             
             if action == 0 and current_pods > 1:
                 new_pods = current_pods - 1
+                self._scale_pods(new_pods)
             elif action == 2:
                 new_pods = current_pods + 1
-
-            state = self._get_state()
-            self._scale_pods(new_pods)
+                self._scale_pods(new_pods)
             
             # 2. Wait for action interval
             time.sleep(self.action_interval)
