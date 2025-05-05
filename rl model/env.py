@@ -6,6 +6,8 @@ from kubernetes import client, config
 from prometheus_api_client import PrometheusConnect
 from reward import RewardCalculator
 from kubernetes.client.rest import ApiException as KubernetesException
+import yaml
+import random
 
 class MicroserviceEnv(gym.Env):
     def __init__(self):
@@ -20,6 +22,7 @@ class MicroserviceEnv(gym.Env):
         # Kubernetes setup
         config.load_kube_config()
         self.k8s_api = client.AppsV1Api()
+        self.custom_api = client.CustomObjectsApi()
         self.deployment_name = "s0"
         self.namespace = "default"
         
@@ -33,11 +36,89 @@ class MicroserviceEnv(gym.Env):
         # Initial seed
         self.np_random = None
         self.reward_calculator = RewardCalculator()
+        
+        # Chaos Mesh setup
+        self.chaos_experiments = {
+            'pod_failure': {
+                'apiVersion': 'chaos-mesh.org/v1alpha1',
+                'kind': 'PodChaos',
+                'metadata': {
+                    'name': 'pod-failure',
+                    'namespace': self.namespace
+                },
+                'spec': {
+                    'action': 'pod-failure',
+                    'mode': 'one',
+                    'selector': {
+                        'labelSelectors': {
+                            'app': self.deployment_name
+                        }
+                    },
+                    'duration': '30s'
+                }
+            },
+            'cpu_stress': {
+                'apiVersion': 'chaos-mesh.org/v1alpha1',
+                'kind': 'StressChaos',
+                'metadata': {
+                    'name': 'cpu-stress',
+                    'namespace': self.namespace
+                },
+                'spec': {
+                    'mode': 'one',
+                    'selector': {
+                        'labelSelectors': {
+                            'app': self.deployment_name
+                        }
+                    },
+                    'stressors': {
+                        'cpu': {
+                            'workers': 4,
+                            'load': 100
+                        }
+                    },
+                    'duration': '30s'
+                }
+            }
+        }
+
+    def _inject_chaos(self):
+        """Randomly inject a chaos experiment"""
+        if random.random() < 0.3:  # 30% chance to inject chaos
+            experiment = random.choice(list(self.chaos_experiments.values()))
+            try:
+                self.custom_api.create_namespaced_custom_object(
+                    group="chaos-mesh.org",
+                    version="v1alpha1",
+                    namespace=self.namespace,
+                    plural="podchaos" if experiment['kind'] == 'PodChaos' else "stresschaos",
+                    body=experiment
+                )
+                print(f"Injected {experiment['kind']} chaos experiment")
+            except Exception as e:
+                print(f"Failed to inject chaos: {str(e)}")
+
+    def _cleanup_chaos(self):
+        """Clean up any running chaos experiments"""
+        for experiment in self.chaos_experiments.values():
+            try:
+                self.custom_api.delete_namespaced_custom_object(
+                    group="chaos-mesh.org",
+                    version="v1alpha1",
+                    namespace=self.namespace,
+                    plural="podchaos" if experiment['kind'] == 'PodChaos' else "stresschaos",
+                    name=experiment['metadata']['name']
+                )
+            except Exception:
+                pass  # Ignore if experiment doesn't exist
 
     def reset(self, seed=None, options=None):
         # Initialize RNG
         super().reset(seed=seed)
         self.np_random = np.random.default_rng(seed)
+        
+        # Clean up any existing chaos experiments
+        self._cleanup_chaos()
         
         # Reset deployment to 1 pod
         self._scale_pods(1)
@@ -61,16 +142,19 @@ class MicroserviceEnv(gym.Env):
                 new_pods = current_pods + 1
                 self._scale_pods(new_pods)
             
-            # 2. Wait for action interval
+            # 2. Inject chaos (randomly)
+            self._inject_chaos()
+            
+            # 3. Wait for action interval
             time.sleep(self.action_interval)
             
-            # 3. Get new state
+            # 4. Get new state
             new_state = self._get_state()
             
-            # 4. Calculate reward
+            # 5. Calculate reward
             reward = self._calculate_reward(state, action, new_state)
             
-            # 5. Check termination
+            # 6. Check termination
             terminated = bool(state[3] > 0.1)  # Error rate >10%
             truncated = False  # No time limit
 
@@ -80,7 +164,6 @@ class MicroserviceEnv(gym.Env):
                 print(f"Scaled down to {new_pods}, Reward: {reward}")
             else:
                 print(f"Scaled up to {new_pods}, Reward: {reward}")
-
 
             return state, reward, terminated, truncated, {}
         except KubernetesException as e:
@@ -130,4 +213,67 @@ class MicroserviceEnv(gym.Env):
             return np.zeros(6, dtype=np.float32)
         
     def _calculate_reward(self, state: np.ndarray, action: int, next_state: np.ndarray) -> float:
-        return -self._get_current_pods()
+        """
+        Calculate reward based on multiple factors:
+        - CPU usage (normalized 0-1)
+        - Memory usage (in bytes)
+        - Latency (in seconds)
+        - Error rate (normalized 0-1)
+        - Pod restarts (count)
+        - Pod count (integer)
+        """
+        # Extract metrics from state
+        cpu_usage = state[0]  # Normalized 0-1
+        memory_usage = state[1]  # In bytes
+        latency = state[2]  # In seconds
+        error_rate = state[3]  # Normalized 0-1
+        pod_restarts = state[4]  # Count
+        pod_count = state[5]  # Integer
+
+        # Initialize reward components
+        reward = 0.0
+
+        # CPU usage penalty (target: 0.7 or less)
+        if cpu_usage > 0.7:
+            reward -= (cpu_usage - 0.7) * 0.5
+        elif cpu_usage < 0.3:  # Penalize underutilization
+            reward -= (0.3 - cpu_usage) * 0.2
+
+        # Memory usage penalty (assuming 1GB = 1e9 bytes as target)
+        memory_gb = memory_usage / 1e9
+        if memory_gb > 0.8:  # More than 800MB
+            reward -= (memory_gb - 0.8) * 0.5
+        elif memory_gb < 0.2:  # Less than 200MB
+            reward -= (0.2 - memory_gb) * 0.2
+
+        # Latency penalty (target: < 1s)
+        if latency > 1.0:
+            reward -= (latency - 1.0) * 2.0
+
+        # Error rate penalty (heavily penalize errors)
+        if error_rate > 0:
+            reward -= error_rate * 10.0
+
+        # Pod restart penalty
+        if pod_restarts > 0:
+            reward -= pod_restarts * 5.0
+
+        # Resource efficiency reward
+        # Calculate optimal pod count based on CPU usage
+        optimal_pods = max(1, int(cpu_usage / 0.7))  # Assuming 70% CPU per pod is optimal
+        pod_count_diff = abs(pod_count - optimal_pods)
+        reward -= pod_count_diff * 2.0
+
+        # Action cost penalty
+        if action != 1:  # Penalize scaling actions
+            reward -= 1.0
+
+        # Additional penalties for extreme conditions
+        if error_rate > 0.1:  # Error rate > 10%
+            reward -= 20.0
+        if cpu_usage > 0.9:  # CPU usage > 90%
+            reward -= 15.0
+        if latency > 2.0:  # Latency > 2s
+            reward -= 15.0
+
+        return reward
