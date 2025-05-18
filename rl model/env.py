@@ -30,7 +30,7 @@ class MicroserviceEnv(gym.Env):
         self.metric_window = "30s"  # Metrics averaging window
         
         # Time control
-        self.action_interval = 2  # Seconds between actions
+        self.action_interval = 5  # Seconds between actions
         
         # Initial seed
         self.np_random = None
@@ -136,7 +136,7 @@ class MicroserviceEnv(gym.Env):
                     print("Applied pod kill experiment")
                     
                     # Set the chaos_active flag to True
-                    self.chaos_active = True
+                self.chaos_active = True
             except Exception as e:
                 print(f"Failed to inject chaos: {str(e)}")
                 return False
