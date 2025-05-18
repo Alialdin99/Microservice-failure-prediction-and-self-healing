@@ -39,25 +39,7 @@ class MicroserviceEnv(gym.Env):
         
         # Chaos Mesh setup
         self.chaos_experiments = {
-            'pod_failure': {
-                'apiVersion': 'chaos-mesh.org/v1alpha1',
-                'kind': 'PodChaos',
-                'metadata': {
-                    'name': 'pod-failure',
-                    'namespace': self.namespace
-                },
-                'spec': {
-                    'action': 'pod-failure',
-                    'mode': 'one',
-                    'selector': {
-                        'labelSelectors': {
-                            'app': self.deployment_name
-                        }
-                    },
-                    'duration': '30s'
-                }
-            },
-            'cpu_stress': {
+            'cpu_stress_failure': {
                 'apiVersion': 'chaos-mesh.org/v1alpha1',
                 'kind': 'StressChaos',
                 'metadata': {
@@ -77,24 +59,79 @@ class MicroserviceEnv(gym.Env):
                             'load': 100
                         }
                     },
-                    'duration': '30s'
+                    'duration': '270s' # 4.5 mins
+                }
+            },
+            'pod_kill': {
+                'apiVersion': 'chaos-mesh.org/v1alpha1',
+                'kind': 'PodChaos',
+                'metadata': {
+                    'name': 'pod-kill',
+                    'namespace': self.namespace
+                },
+                'spec': {
+                    'action': 'pod-kill',
+                    'mode': 'one',
+                    'selector': {
+                        'labelSelectors': {
+                            'app': self.deployment_name
+                        }
+                    },
+                }
+            },
+            'cpu_stress': {
+                'apiVersion': 'chaos-mesh.org/v1alpha1',
+                'kind': 'StressChaos',
+                'metadata': {
+                    'name': 'cpu-stress',
+                    'namespace': self.namespace
+                },
+                'spec': {
+                    'mode': 'one',
+                    'selector': {
+                        'labelSelectors': {
+                            'app': self.deployment_name
+                        }
+                    },
+                    'stressors': {
+                        'cpu': {
+                            'workers': 4,
+                            'load': 50
+                        }
+                    },
+                    'duration': '270s' # 4.5 mins
                 }
             }
         }
 
     def _inject_chaos(self):
-        """Randomly inject a chaos experiment"""
+        """Randomly inject a chaos experiment (cpu_stress or cpu_stress_failure only)"""
         if random.random() < 0.3:  # 30% chance to inject chaos
-            experiment = random.choice(list(self.chaos_experiments.values()))
+            experiment = random.choice([
+                self.chaos_experiments['cpu_stress'],
+                self.chaos_experiments['cpu_stress_failure']
+            ])
             try:
                 self.custom_api.create_namespaced_custom_object(
                     group="chaos-mesh.org",
                     version="v1alpha1",
                     namespace=self.namespace,
-                    plural="podchaos" if experiment['kind'] == 'PodChaos' else "stresschaos",
+                    plural="stresschaos",
                     body=experiment
                 )
                 print(f"Injected {experiment['kind']} chaos experiment")
+
+                # If the experiment is cpu_stress_failure, apply pod kill
+                if experiment == self.chaos_experiments['cpu_stress_failure']:
+                    pod_kill_experiment = self.chaos_experiments['pod_kill']
+                    self.custom_api.create_namespaced_custom_object(
+                        group="chaos-mesh.org",
+                        version="v1alpha1",
+                        namespace=self.namespace,
+                        plural="podchaos",
+                        body=pod_kill_experiment
+                    )
+                    print("Applied pod kill experiment")
             except Exception as e:
                 print(f"Failed to inject chaos: {str(e)}")
 
@@ -142,6 +179,9 @@ class MicroserviceEnv(gym.Env):
                 new_pods = current_pods + 1
                 self._scale_pods(new_pods)
             
+            # Clean up any existing chaos experiments
+            self._cleanup_chaos()
+
             # 2. Inject chaos (randomly)
             self._inject_chaos()
             
@@ -155,8 +195,6 @@ class MicroserviceEnv(gym.Env):
             reward = self._calculate_reward(state, action, new_state)
             
             # 6. Check termination
-            terminated = bool(state[3] > 0.1)  # Error rate >10%
-            truncated = False  # No time limit
 
             if action == 1:
                 print(f"Did nothing, Reward: {reward}")
@@ -165,7 +203,7 @@ class MicroserviceEnv(gym.Env):
             else:
                 print(f"Scaled up to {new_pods}, Reward: {reward}")
 
-            return state, reward, terminated, truncated, {}
+            return state, reward, False, False, {}
         except KubernetesException as e:
             print(f"Pod Failure, Reward: -100")
             state, _ = self.reset()
