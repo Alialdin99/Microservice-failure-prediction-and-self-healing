@@ -47,7 +47,7 @@ class MicroserviceEnv(gym.Env):
                     'namespace': self.namespace
                 },
                 'spec': {
-                    'mode': 'one',
+                    'mode': 'all',
                     'selector': {
                         'labelSelectors': {
                             'app': self.deployment_name
@@ -71,7 +71,7 @@ class MicroserviceEnv(gym.Env):
                 },
                 'spec': {
                     'action': 'pod-kill',
-                    'mode': 'one',
+                    'mode': 'all',
                     'selector': {
                         'labelSelectors': {
                             'app': self.deployment_name
@@ -87,7 +87,7 @@ class MicroserviceEnv(gym.Env):
                     'namespace': self.namespace
                 },
                 'spec': {
-                    'mode': 'one',
+                    'mode': 'all',
                     'selector': {
                         'labelSelectors': {
                             'app': self.deployment_name
