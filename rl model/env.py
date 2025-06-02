@@ -15,25 +15,30 @@ class MicroserviceEnv(gym.Env):
         # Action and observation spaces
         self.action_space = spaces.Discrete(3)  # 0=down, 1=nothing, 2=up
         self.observation_space = spaces.Box(
-            low=0, high=2**63, shape=(6,), dtype=np.float32
+            low=0, high=2**63, shape=(3,), dtype=np.float32
         )
         
         # Kubernetes setup
         config.load_kube_config()
         self.k8s_api = client.AppsV1Api()
         self.custom_api = client.CustomObjectsApi()
-        self.deployment_name = "s0"
+        self.deployment_name = "nginx-deployment"
         self.namespace = "default"
         
         # Prometheus setup
-        self.prom = PrometheusConnect(url="http://127.0.0.1:62445")
+        self.prom = PrometheusConnect(url="http://127.0.0.1:42539")
         self.metric_window = "30s"  # Metrics averaging window
         
         # Time control
-        self.action_interval = 5  # Seconds between actions
-        
+        self.action_interval = 30  # Seconds between actions
+        self.max_pods = 15
         # Initial seed
         self.np_random = None
+        
+        # Tracking pod counts
+        self.pod_counts = []
+        self.steps = []
+        self.current_step = 0
         
         # Chaos Mesh setup
         self.chaos_active = False
@@ -166,7 +171,7 @@ class MicroserviceEnv(gym.Env):
         self._cleanup_chaos()
         
         # Reset deployment to 1 pod
-        self._scale_pods(1)
+        self._scale_pods(self._get_current_pods())
         time.sleep(self.action_interval)  # Wait for stabilization
         
         # Get initial state
@@ -179,13 +184,24 @@ class MicroserviceEnv(gym.Env):
             current_pods = self._get_current_pods()
             new_pods = current_pods
             state = self._get_state()
+
+            if action == 0 and current_pods == 1 or action == 2 and current_pods == self.max_pods:
+                print(f"Invalid action, Reward: -10")
+                return state, -10, False, False, {}
             
-            if action == 0 and current_pods > 1:
+            if action == 0:
                 new_pods = current_pods - 1
-                self._scale_pods(new_pods)
+                if not self._scale_pods(new_pods):
+                    print("Failed to scale down, keeping current pod count")
+                    new_pods = current_pods
             elif action == 2:
                 new_pods = current_pods + 1
-                self._scale_pods(new_pods)
+                if not self._scale_pods(new_pods):
+                    print("Failed to scale up, keeping current pod count")
+                    new_pods = current_pods
+
+            # 1. Get new state
+            new_state = self._get_state()
             
             # Clean up any existing chaos experiments
             self._cleanup_chaos()
@@ -197,18 +213,13 @@ class MicroserviceEnv(gym.Env):
             # 3. Wait for action interval
             time.sleep(self.action_interval)
             
-            # 4. Get new state
-            new_state = self._get_state()
-            
-            # 5. Calculate reward
+            # 4. Calculate reward
             reward = self._calculate_reward(state, action, new_state)
             
-            # 6. Check termination
-            terminated = bool(state[3] > 0.1)  # Error rate >10%
-            truncated = False  # No time limit
-            
-            if terminated:
-                self._cleanup_chaos()
+            # Track pod counts
+            self.current_step += 1
+            self.steps.append(self.current_step)
+            self.pod_counts.append(new_pods)
 
             if action == 1:
                 print(f"Did nothing, Reward: {reward}")
@@ -217,21 +228,51 @@ class MicroserviceEnv(gym.Env):
             else:
                 print(f"Scaled up to {new_pods}, Reward: {reward}")
 
-            return state, reward, False, False, {}
+            return new_state, reward, False, False, {}
         except KubernetesException as e:
             print(f"Pod Failure, Reward: -100")
             state, _ = self.reset()
             return state, -100, True, False, {}
 
     def _scale_pods(self, replicas: int):
-        """Scale the Kubernetes deployment"""
-        deployment = self.k8s_api.read_namespaced_deployment(
-            name=self.deployment_name, namespace=self.namespace
-        )
-        deployment.spec.replicas = replicas
-        self.k8s_api.patch_namespaced_deployment(
-            name=self.deployment_name, namespace=self.namespace, body=deployment
-        )
+        """Scale the Kubernetes deployment with retry mechanism"""
+        max_retries = 5
+        base_delay = 1  # Base delay in seconds
+        
+        for attempt in range(max_retries):
+            try:
+                # Get the latest deployment state
+                deployment = self.k8s_api.read_namespaced_deployment(
+                    name=self.deployment_name, 
+                    namespace=self.namespace
+                )
+                
+                # Update the replicas
+                deployment.spec.replicas = replicas
+                
+                # Apply the update
+                self.k8s_api.patch_namespaced_deployment(
+                    name=self.deployment_name, 
+                    namespace=self.namespace, 
+                    body=deployment
+                )
+                return True
+                
+            except KubernetesException as e:
+                if e.status == 409:  # Conflict error
+                    if attempt < max_retries - 1:
+                        # Calculate delay with exponential backoff and jitter
+                        delay = base_delay * (2 ** attempt) + random.uniform(0, 0.1)
+                        print(f"Conflict detected, retrying in {delay:.2f} seconds...")
+                        time.sleep(delay)
+                        continue
+                print(f"Error scaling deployment: {e}")
+                return False
+            except Exception as e:
+                print(f"Unexpected error: {e}")
+                return False
+        
+        return False
 
     def _get_current_pods(self) -> int:
         """Get current number of pods"""
@@ -243,26 +284,28 @@ class MicroserviceEnv(gym.Env):
     def _get_state(self):
         try:
             queries = {
-                "cpu_usage_percent": f'(sum(rate(container_cpu_usage_seconds_total{{namespace="{self.namespace}", pod=~"{self.deployment_name}-.*"}}[1m])) * 100)',
+                "cpu_usage_percent": f'sum(rate(container_cpu_usage_seconds_total{{namespace="{self.namespace}", pod=~"{self.deployment_name}-.*"}}[1d])) * 100',
                 "memory": f'sum(container_memory_working_set_bytes{{namespace="{self.namespace}", pod=~"{self.deployment_name}-.*"}})',
-                "avg_request_latency": f'avg(rate(http_request_duration_seconds_sum[1m])) / avg(rate(http_request_duration_seconds_count[1m]))',
-                "request_error_rate": f'sum(rate(http_request_errors_total[1m]))',
-                "pod_restarts": f'sum(increase(kube_pod_container_status_restarts_total{{namespace="{self.namespace}", pod=~"{self.deployment_name}-.*"}}[1m]))',
             }
-
-            cpu_usage_percent = float(self.prom.custom_query(queries["cpu_usage_percent"])[0]['value'][1]) if self.prom.custom_query(queries["cpu_usage_percent"]) else 0.0
-            memory = float(self.prom.custom_query(queries["memory"])[0]['value'][1]) if self.prom.custom_query(queries["memory"]) else 0.0
-            avg_request_latency = float(self.prom.custom_query(queries["avg_request_latency"])[0]['value'][1]) if self.prom.custom_query(queries["avg_request_latency"]) else 0.0
-
-            request_error_rate = float(self.prom.custom_query(queries["request_error_rate"])[0]['value'][1]) if self.prom.custom_query(queries["request_error_rate"]) else 0.0
-            pod_restarts = float(self.prom.custom_query(queries["pod_restarts"])[0]['value'][1]) if self.prom.custom_query(queries["pod_restarts"]) else 0.0
+            # Get CPU usage
+            cpu_query = self.prom.custom_query(queries["cpu_usage_percent"])
+            cpu_usage_percent = float(cpu_query[0]['value'][1]) if cpu_query else 0.0
+            
+            # Get memory usage
+            memory_query = self.prom.custom_query(queries["memory"])
+            memory = float(memory_query[0]['value'][1]) if memory_query else 0.0
+            
+            # Get current pod count
             pod_count = self._get_current_pods()
 
-            # return np.array([cpu, memory, latency, error_rate, pod_count], dtype=np.float32)
-            return np.array([cpu_usage_percent, memory, avg_request_latency, request_error_rate, pod_restarts, pod_count], dtype=np.float32)
+            return np.array([cpu_usage_percent, memory, pod_count], dtype=np.float32)
         except Exception as e:
             print(f"Error in metric: {str(e)}")
-            return np.zeros(6, dtype=np.float32)
+            return np.zeros(3, dtype=np.float32)
         
     def _calculate_reward(self, state: np.ndarray, action: int, next_state: np.ndarray) -> float:
-        return -self._get_current_pods()
+        return (self.max_pods - self._get_current_pods()) / self.max_pods
+
+    def get_pod_history(self):
+        """Return the history of pod counts and steps"""
+        return self.steps, self.pod_counts
