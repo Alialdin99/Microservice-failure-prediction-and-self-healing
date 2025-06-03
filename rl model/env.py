@@ -26,11 +26,11 @@ class MicroserviceEnv(gym.Env):
         self.namespace = "default"
         
         # Prometheus setup
-        self.prom = PrometheusConnect(url="http://127.0.0.1:42539")
+        self.prom = PrometheusConnect(url="http://127.0.0.1:34809")
         self.metric_window = "30s"  # Metrics averaging window
         
         # Time control
-        self.action_interval = 30  # Seconds between actions
+        self.action_interval = 5  # Seconds between actions
         self.max_pods = 15
         # Initial seed
         self.np_random = None
@@ -113,7 +113,7 @@ class MicroserviceEnv(gym.Env):
             return False
         
         """Randomly inject a chaos experiment (cpu_stress or cpu_stress_failure only)"""
-        if random.random() < 0.3:  # 30% chance to inject chaos
+        if random.random() < 0.1:  # 10% chance to inject chaos
             experiment = random.choice([
                 self.chaos_experiments['cpu_stress'],
                 self.chaos_experiments['cpu_stress_failure']
@@ -167,9 +167,6 @@ class MicroserviceEnv(gym.Env):
         super().reset(seed=seed)
         self.np_random = np.random.default_rng(seed)
         
-        # Clean up any existing chaos experiments
-        self._cleanup_chaos()
-        
         # Reset deployment to 1 pod
         self._scale_pods(self._get_current_pods())
         time.sleep(self.action_interval)  # Wait for stabilization
@@ -187,34 +184,33 @@ class MicroserviceEnv(gym.Env):
 
             if action == 0 and current_pods == 1 or action == 2 and current_pods == self.max_pods:
                 print(f"Invalid action, Reward: -10")
-                return state, -10, False, False, {}
+                return state, -10, True, False, {}
             
             if action == 0:
                 new_pods = current_pods - 1
-                if not self._scale_pods(new_pods):
-                    print("Failed to scale down, keeping current pod count")
-                    new_pods = current_pods
             elif action == 2:
                 new_pods = current_pods + 1
-                if not self._scale_pods(new_pods):
-                    print("Failed to scale up, keeping current pod count")
-                    new_pods = current_pods
 
-            # 1. Get new state
+            if not self._scale_pods(new_pods):
+                print("Failed to scale up, keeping current pod count")
+                new_pods = current_pods
+
+            # 1. Wait for stablization
+            time.sleep(self.action_interval)
+
+            # 2. Get new state
             new_state = self._get_state()
-            
+
+            # 3. Calculate reward
+            reward = self._calculate_reward(state, action, new_state)
+
+            # 4. Inject chaos (randomly)
             # Clean up any existing chaos experiments
             self._cleanup_chaos()
-
-            # 2. Inject chaos (randomly)
+            time.sleep(self.action_interval)
             if not self.chaos_active:
                 self._inject_chaos()
             
-            # 3. Wait for action interval
-            time.sleep(self.action_interval)
-            
-            # 4. Calculate reward
-            reward = self._calculate_reward(state, action, new_state)
             
             # Track pod counts
             self.current_step += 1
