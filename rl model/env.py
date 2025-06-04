@@ -184,7 +184,14 @@ class MicroserviceEnv(gym.Env):
 
             if action == 0 and current_pods == 1 or action == 2 and current_pods == self.max_pods:
                 print(f"Invalid action, Reward: -10")
-                return state, -10, True, False, {}
+                return state, -1, True, False, {
+                    'current_pods': current_pods,
+                    'action': action,
+                    'invalid_action': True,
+                    'cpu_usage': state[0],
+                    'memory_usage': state[1],
+                    'response_time': state[2]
+                }
             
             if action == 0:
                 new_pods = current_pods - 1
@@ -204,14 +211,6 @@ class MicroserviceEnv(gym.Env):
             # 3. Calculate reward
             reward = self._calculate_reward(state, action, new_state)
 
-            # 4. Inject chaos (randomly)
-            # Clean up any existing chaos experiments
-            self._cleanup_chaos()
-            time.sleep(self.action_interval)
-            if not self.chaos_active:
-                self._inject_chaos()
-            
-            
             # Track pod counts
             self.current_step += 1
             self.steps.append(self.current_step)
@@ -224,51 +223,39 @@ class MicroserviceEnv(gym.Env):
             else:
                 print(f"Scaled up to {new_pods}, Reward: {reward}")
 
-            return new_state, reward, False, False, {}
-        except KubernetesException as e:
-            print(f"Pod Failure, Reward: -100")
-            state, _ = self.reset()
-            return state, -100, True, False, {}
+            return new_state, reward, False, False, {
+                'current_pods': new_pods,
+                'action': action,
+                'cpu_usage': new_state[0],
+                'memory_usage': new_state[1],
+                'response_time': new_state[2],
+                'reward': reward
+            }
+        except Exception as e:
+            print(f"Unexpected error in step: {str(e)}")
+            return state, -10, True, False, {
+                'error': str(e),
+                'current_pods': self._get_current_pods(),
+                'unexpected_error': True
+            }
 
     def _scale_pods(self, replicas: int):
-        """Scale the Kubernetes deployment with retry mechanism"""
-        max_retries = 5
-        base_delay = 1  # Base delay in seconds
+        """Scale the Kubernetes deployment"""
+        # Get the latest deployment state
+        deployment = self.k8s_api.read_namespaced_deployment(
+            name=self.deployment_name, 
+            namespace=self.namespace
+        )
         
-        for attempt in range(max_retries):
-            try:
-                # Get the latest deployment state
-                deployment = self.k8s_api.read_namespaced_deployment(
-                    name=self.deployment_name, 
-                    namespace=self.namespace
-                )
-                
-                # Update the replicas
-                deployment.spec.replicas = replicas
-                
-                # Apply the update
-                self.k8s_api.patch_namespaced_deployment(
-                    name=self.deployment_name, 
-                    namespace=self.namespace, 
-                    body=deployment
-                )
-                return True
-                
-            except KubernetesException as e:
-                if e.status == 409:  # Conflict error
-                    if attempt < max_retries - 1:
-                        # Calculate delay with exponential backoff and jitter
-                        delay = base_delay * (2 ** attempt) + random.uniform(0, 0.1)
-                        print(f"Conflict detected, retrying in {delay:.2f} seconds...")
-                        time.sleep(delay)
-                        continue
-                print(f"Error scaling deployment: {e}")
-                return False
-            except Exception as e:
-                print(f"Unexpected error: {e}")
-                return False
+        # Update the replicas
+        deployment.spec.replicas = replicas
         
-        return False
+        # Apply the update
+        self.k8s_api.patch_namespaced_deployment(
+            name=self.deployment_name, 
+            namespace=self.namespace, 
+            body=deployment
+        )
 
     def _get_current_pods(self) -> int:
         """Get current number of pods"""
