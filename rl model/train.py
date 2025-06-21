@@ -16,7 +16,7 @@ wandb.init(
         "algorithm": "PPO",
         "learning_rate": 0.0003,
         "n_steps": 250,       # collect 1 step per update (to match total_timesteps)
-        "batch_size": 64,    # batch_size must be <= n_steps
+        "batch_size": 250,    # batch_size must be <= n_steps
         "n_epochs": 4,
         "gamma": 0.99,
         "gae_lambda": 0.95,
@@ -77,7 +77,7 @@ os.makedirs("./Results/models", exist_ok=True)
 
 # Train the model: run for 1 step total, then stop
 model.learn(
-    total_timesteps=1000,
+    total_timesteps=500,
     callback=[eval_callback, wandb_callback],
     progress_bar=True
 )

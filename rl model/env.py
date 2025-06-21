@@ -134,8 +134,8 @@ class MicroserviceEnv(gym.Env):
                         body=pod_kill_experiment
                     )
                     print("Applied pod kill experiment")
-                    
-                    # Set the chaos_active flag to True
+
+                # Set the chaos_active flag to True
                 self.chaos_active = True
             except Exception as e:
                 print(f"Failed to inject chaos: {str(e)}")
