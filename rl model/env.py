@@ -24,9 +24,11 @@ class MicroserviceEnv(gym.Env):
         self.custom_api = client.CustomObjectsApi()
         self.deployment_name = "s0"
         self.namespace = "default"
+        # self.is_scaling = False
+        # self.target_pod_count = 0
         
         # Prometheus setup
-        self.prom = PrometheusConnect(url="http://127.0.0.1:62445")
+        self.prom = PrometheusConnect(url="http://127.0.0.1:64179")
         self.metric_window = "30s"  # Metrics averaging window
         
         # Time control
@@ -36,7 +38,7 @@ class MicroserviceEnv(gym.Env):
         self.np_random = None
         
         # Chaos Mesh setup
-        self.chaos_active = False
+        self.active_chaos_instances = set()
         self.chaos_experiments = {
             'cpu_stress_failure': {
                 'apiVersion': 'chaos-mesh.org/v1alpha1',
@@ -104,7 +106,7 @@ class MicroserviceEnv(gym.Env):
         }
 
     def _inject_chaos(self):
-        if self.chaos_active:
+        if self.active_chaos_instances:
             return False
         
         """Randomly inject a chaos experiment (cpu_stress or cpu_stress_failure only)"""
@@ -121,6 +123,7 @@ class MicroserviceEnv(gym.Env):
                     plural="stresschaos",
                     body=experiment
                 )
+                self.active_chaos_instances.add(experiment['metadata']['name'])
                 print(f"Injected {experiment['kind']} chaos experiment")
 
                 # If the experiment is cpu_stress_failure, apply pod kill
@@ -133,10 +136,9 @@ class MicroserviceEnv(gym.Env):
                         plural="podchaos",
                         body=pod_kill_experiment
                     )
+                    self.active_chaos_instances.add(pod_kill_experiment['metadata']['name'])
                     print("Applied pod kill experiment")
-
-                # Set the chaos_active flag to True
-                self.chaos_active = True
+                    
             except Exception as e:
                 print(f"Failed to inject chaos: {str(e)}")
                 return False
@@ -145,18 +147,40 @@ class MicroserviceEnv(gym.Env):
     def _cleanup_chaos(self):
         """Clean up any running chaos experiments"""
         for experiment in self.chaos_experiments.values():
+            kind = experiment['kind']
+            name = experiment['metadata']['name']
+            plural = 'podchaos' if kind == 'PodChaos' else 'stresschaos'
+            
             try:
                 self.custom_api.delete_namespaced_custom_object(
                     group="chaos-mesh.org",
                     version="v1alpha1",
                     namespace=self.namespace,
-                    plural="podchaos" if experiment['kind'] == 'PodChaos' else "stresschaos",
-                    name=experiment['metadata']['name']
+                    plural=plural,
+                    name=name
                 )
             except Exception:
                 pass  # Ignore if experiment doesn't exist
-        self.chaos_active = False
+            
+            # Waiting for deletion
+            for _ in range(10):
+                time.sleep(0.5)
+                try:
+                    self.custom_api.get_namespaced_custom_object(
+                        group="chaos-mesh.org",
+                        version="v1alpha1",
+                        namespace=self.namespace,
+                        plural=plural,
+                        name=name
+                    )
+                except:
+                    # deleted successfully
+                    break
 
+            if name in self.active_chaos_instances:
+                self.active_chaos_instances.discard(name)
+                print(f"Deleted {kind} chaos experiment")
+    
     def reset(self, seed=None, options=None):
         # Initialize RNG
         super().reset(seed=seed)
@@ -179,19 +203,27 @@ class MicroserviceEnv(gym.Env):
             current_pods = self._get_current_pods()
             new_pods = current_pods
             state = self._get_state()
-            
+            # if self.is_scaling and self.target_pod_count == current_pods:
+            #     self.is_scaling == False
+
+            # was_scaling = self.is_scaling
             if action == 0 and current_pods > 1:
                 new_pods = current_pods - 1
+                # self.target_pod_count = new_pods
+                # self.is_scaling = True
                 self._scale_pods(new_pods)
+                
             elif action == 2:
                 new_pods = current_pods + 1
+                # self.is_scaling = True
+                # self.target_pod_count = new_pods
                 self._scale_pods(new_pods)
             
             # Clean up any existing chaos experiments
             self._cleanup_chaos()
 
             # 2. Inject chaos (randomly)
-            if not self.chaos_active:
+            if not self.active_chaos_instances:
                 self._inject_chaos()
             
             # 3. Wait for action interval
@@ -210,6 +242,8 @@ class MicroserviceEnv(gym.Env):
             if terminated:
                 self._cleanup_chaos()
 
+            # if was_scaling and (action == 2 or action == 0):
+            #     print(f"Scale requested, kubernetes busy with another scaling, Reward: {reward}, target: {self.target_pod_count}, current: {current_pods}")
             if action == 1:
                 print(f"Did nothing, Reward: {reward}")
             elif action == 0:
