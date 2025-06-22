@@ -5,7 +5,7 @@ TRAINING_CONFIG = {
     "algorithm": "PPO",
     "learning_rate": 0.0003,
     "n_steps": 128,            # Keep 128 steps per update
-    "batch_size": 64,          # Changed to 64 (must be a factor of n_steps * n_envs)
+    "batch_size": 32,          # Changed to 32 (must be a factor of n_steps * n_envs)
     "n_epochs": 10,            # Keep 10 epochs for good learning
     "gamma": 0.99,             # discount factor
     "gae_lambda": 0.95,        # factor for trade-off of bias vs variance for GAE
