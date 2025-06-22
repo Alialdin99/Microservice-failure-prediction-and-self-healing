@@ -7,10 +7,13 @@ from gymnasium import spaces
 from kubernetes import client, config
 from prometheus_api_client import PrometheusConnect
 from kubernetes.client.rest import ApiException as KubernetesException
+import os
+from dotenv import load_dotenv
 
 class MicroserviceEnv(gym.Env):
     def __init__(self):
         super().__init__()
+        load_dotenv()
         
         # Action and observation spaces
         self.action_space = spaces.Discrete(3)  # 0=down, 1=nothing, 2=up
@@ -28,7 +31,8 @@ class MicroserviceEnv(gym.Env):
         # self.target_pod_count = 0
         
         # Prometheus setup
-        self.prom = PrometheusConnect(url="http://127.0.0.1:64179")
+        prometheus_url = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
+        self.prom = PrometheusConnect(url=prometheus_url)
         self.metric_window = "30s"  # Metrics averaging window
         
         # Time control
@@ -207,7 +211,7 @@ class MicroserviceEnv(gym.Env):
             state = self._get_state()
 
             if action == 0 and current_pods == 1 or action == 2 and current_pods == self.max_pods:
-                print(f"Invalid action, Reward: -10")
+                print(f"Invalid action, Reward: -1")
                 return state, -1, True, False, {
                     'current_pods': current_pods,
                     'action': action,
@@ -216,13 +220,12 @@ class MicroserviceEnv(gym.Env):
                     'memory_usage': state[1],
                     'response_time': state[2]
                 }
-            
             if action == 0:
                 new_pods = current_pods - 1
             elif action == 2:
                 new_pods = current_pods + 1
 
-            self._scale_pods(new_pods):
+            self._scale_pods(new_pods)
               
             # Clean up any existing chaos experiments
             self._cleanup_chaos()
