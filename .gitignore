@@ -1,5 +1,5 @@
 venv
 __pycache__
 rl_venv
-rl\ model/Results/tensorboard
-rl\ model/Results/wandb
+rl\ model/Results
+.env
