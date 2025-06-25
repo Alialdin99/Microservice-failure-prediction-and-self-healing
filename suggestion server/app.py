@@ -1,117 +1,112 @@
-import joblib
 import requests
-from flask import Flask, jsonify
-from apscheduler.schedulers.background import BackgroundScheduler
+from flask import Flask, request, jsonify
 import datetime
+import os
+import joblib
+import time
 
 app = Flask(__name__)
 
-# store latest prediction
-latest_prediction = {
-    "action": None,
-    "timestamp": None,
-    "metrics": None
-}
-
-# Load RL model 
-try:
-    model = joblib.load('final_model.zip')
-    print("Model loaded successfully")
-except Exception as e:
-    print(f"Model loading failed: {str(e)}")
-    model = None
-
 # Configuration
-PROMETHEUS_URL = "http://prometheus:9090/api/v1/query" #dummy
-KUBERNETES_PLUGIN_URL = "http://kubernetes-plugin/api/scale" #dummy
+PROMETHEUS_URL = os.getenv('PROMETHEUS_URL', 'http://prometheus:9090/api/v1/query')
+RL_API_URL = os.getenv('RL_API_URL', 'http://localhost:5000/predict') 
+
+# Prometheus queries
 PROM_QUERIES = {
-    "cpu_usage": '100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100',
-    "memory_usage": '100 * (1 - ((node_memory_MemAvailable_bytes) / (node_memory_MemTotal_bytes)))',
-    "network_io": 'irate(node_network_receive_bytes_total[5m])'
+    "cpu_usage": '100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100',
+    "memory_usage": '100 * (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))',
+    "network_io": 'rate(node_network_receive_bytes_total[1m])'
 }
 
 def fetch_prometheus_metrics():
-    """Fetch metrics from Prometheus"""
+    """Fetch metrics from Prometheus with retries"""
     metrics = {}
-    try:
-        for name, query in PROM_QUERIES.items():
-            response = requests.get(PROMETHEUS_URL, params={'query': query})
+    max_retries = 3
+    for name, query in PROM_QUERIES.items():
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(
+                    PROMETHEUS_URL,
+                    params={'query': query},
+                    timeout=3
+                )
+                response.raise_for_status()
+                result = response.json().get('data', {}).get('result')
+                
+                if not result:
+                    print(f"No results for query: {query}")
+                    continue
+                    
+                value = result[0].get('value', [None, None])[1]
+                if value is None:
+                    print(f"Value missing for query: {query}")
+                    continue
+                    
+                metrics[name] = float(value)
+                break  
+                
+            except Exception as e:
+                print(f"Metrics fetch error (attempt {attempt+1}): {str(e)}")
+                if attempt < max_retries - 1:
+                    time.sleep(1) 
+                else:
+                    metrics[name] = 0.0  
+    return metrics
+
+def get_rl_prediction(metrics):
+    """Get prediction from RL model API with retries"""
+    max_retries = 2
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(
+                RL_API_URL,
+                json=metrics,
+                timeout=3
+            )
             response.raise_for_status()
-            result = response.json()['data']['result'][0]['value'][1]
-            metrics[name] = float(result)
-        print(f"Metrics fetched: {metrics}")
-        return metrics
-    except Exception as e:
-        print(f"Metrics fetch error: {str(e)}")
-        return None
+            return response.json().get('action')
+        except Exception as e:
+            print(f"RL API error (attempt {attempt+1}): {str(e)}")
+            if attempt < max_retries - 1:
+                time.sleep(0.5)
+    return 1
 
-def predict_action(metrics):
-    """Predict scaling action using RL model"""
-    if not model:
-        return "no_action"
+# Main endpoint for scaling recommendation
+@app.route('/scale', methods=['POST'])
+def scale_recommendation():
+    """Endpoint for Kubernetes to get scaling recommendations"""
+    start_time = time.time()
     
-    try:
-        features = [
-            metrics['cpu_usage'],
-            metrics['memory_usage'],
-            metrics['network_io']
-        ]
-        
-        prediction = model.predict([features])[0]
-        actions = {0: "scale_down", 1: "no_action", 2: "scale_up"}
-        return actions.get(prediction, "no_action")
-    except Exception as e:
-        print(f"Prediction error: {str(e)}")
-        return "no_action"
-
-def send_to_kubernetes(action):
-    """Send scaling action to Kubernetes plugin"""
-    try:
-        payload = {"action": action}
-        response = requests.post(KUBERNETES_PLUGIN_URL, json=payload, timeout=5)
-        response.raise_for_status()
-        print(f"Sent to Kubernetes: {action}")
-        return True
-    except Exception as e:
-        print(f"Kubernetes comm error: {str(e)}")
-        return False
-
-def hourly_task():
-    """Scheduled task that runs every hour"""
-    global latest_prediction
-    
-    print("\nRunning hourly task...")
+    # 1. Fetch metrics from Prometheus
     metrics = fetch_prometheus_metrics()
     if not metrics:
-        return
-        
-    action = predict_action(metrics)
-    send_to_kubernetes(action)
+        return jsonify({
+            "status": "error",
+            "message": "Failed to fetch metrics from Prometheus"
+        }), 500
     
-    # Store prediction for user display
-    latest_prediction = {
-        "action": action,
-        "timestamp": datetime.datetime.utcnow().isoformat(),
-        "metrics": metrics
-    }
-    print(f"New prediction stored: {action}")
+    # 2. Get prediction from RL model
+    action = get_rl_prediction(metrics)
 
-# User endpoint to show latest prediction
-@app.route('/prediction', methods=['GET'])
-def get_prediction():
+    # 3. Prepare response
+    response = {
+        "status": "success",
+        "action": action,
+        "processing_time": round(time.time() - start_time, 4)
+    }
+    
+    return jsonify(response)
+
+# Health check endpoint
+@app.route('/health', methods=['GET'])
+def health_check():
     return jsonify({
-        "status": "success" if latest_prediction['action'] else "no_data",
-        "prediction": latest_prediction
+        "status": "healthy",
+        "timestamp": datetime.datetime.utcnow().isoformat()
     })
 
 if __name__ == '__main__':
-    # Setup scheduler
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(hourly_task, 'interval', hours=1)
-    scheduler.start()
-    
-    # Initial run
-    hourly_task()
-    
-    # Start Flask app
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    print("Starting Kubernetes Scaling Recommendation API...")
+    print(f"Prometheus URL: {PROMETHEUS_URL}")
+    print(f"RL Model API URL: {RL_API_URL}")
+    app.run(host='0.0.0.0', port=5000, debug=False)
