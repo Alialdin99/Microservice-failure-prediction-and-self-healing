@@ -284,11 +284,24 @@ class MicroserviceEnv(gym.Env):
         deployment.spec.replicas = replicas
         
         # Apply the update
-        self.k8s_api.patch_namespaced_deployment(
-            name=self.deployment_name, 
-            namespace=self.namespace, 
-            body=deployment
-        )
+        try:
+            self.k8s_api.patch_namespaced_deployment(
+                name=self.deployment_name, 
+                namespace=self.namespace, 
+                body=deployment
+            )
+        except KubernetesException as e:
+            if e.status == 409:
+                print("Conflict in _scale_pods, retrying...")
+                time.sleep(0.1)
+                self.k8s_api.patch_namespaced_deployment(
+                    name=self.deployment_name, 
+                    namespace=self.namespace, 
+                    body=deployment
+                )
+            else:
+                print(f"Error in _scale_pods: {str(e)}")
+                raise e
 
     def _get_current_pods(self) -> int:
         """Get current number of pods"""
