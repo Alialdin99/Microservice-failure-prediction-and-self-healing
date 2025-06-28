@@ -4,8 +4,8 @@
 TRAINING_CONFIG = {
     "algorithm": "PPO",
     "learning_rate": 0.0003,
-    "n_steps": 128,            # Keep 128 steps per update
-    "batch_size": 32,          # Changed to 32 (must be a factor of n_steps * n_envs)
+    "n_steps": 256,            # Keep 256 steps per update
+    "batch_size": 64,          # Changed to 32 (must be a factor of n_steps * n_envs)
     "n_epochs": 10,            # Keep 10 epochs for good learning
     "gamma": 0.99,             # discount factor
     "gae_lambda": 0.95,        # factor for trade-off of bias vs variance for GAE
@@ -29,7 +29,7 @@ TRAINING_CONFIG = {
 # Training settings
 TRAINING_SETTINGS = {
     "total_timesteps": 2000,    # Keep 2000 total timesteps
-    "eval_freq": 128,          # Changed to match n_steps
+    "eval_freq": 256,          # Changed to match n_steps
     "n_eval_episodes": 5,      # Keep 5 evaluation episodes
 }
 

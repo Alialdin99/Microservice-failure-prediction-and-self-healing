@@ -9,7 +9,7 @@ class PodTrackingCallback(BaseCallback):
         
     def _on_step(self):
         # Get the current number of pods from the environment
-        current_pods = self.training_env.envs[0].env._get_current_pods()
+        current_pods = self.training_env.envs[0].env._get_current_replicas()
         self.pod_counts.append(current_pods)
         self.steps.append(self.num_timesteps)
         return True
