@@ -16,10 +16,10 @@ chmod +x Monitoring/monitoring-install.sh
 ./Monitoring/monitoring-install.sh
 
 echo "Deploying nginx.yaml..."
-kubectl apply -f deployments/nginx.yaml
+kubectl apply -f ./deployments/nginx.yaml
 
 echo "Deploying traffic-generator.yaml..."
-kubectl apply -f deployments/traffic-generator.yaml
+kubectl apply -f ./deployments/traffic-generator.yaml
 
 echo "Environment setup complete."
 
