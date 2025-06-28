@@ -6,3 +6,7 @@ tensorboard>=2.16.2
 kubernetes>=26.1.0
 prometheus-api-client>=0.5.0 
 python-dotenv
+flask
+joblib
+matplotlib
+requests
