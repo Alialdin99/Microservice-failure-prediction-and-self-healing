@@ -6,11 +6,11 @@ import gymnasium as gym
 from gymnasium import spaces
 from kubernetes import client, config
 from prometheus_api_client import PrometheusConnect
-from kubernetes.client.rest import ApiException as KubernetesException
 import os
 from dotenv import load_dotenv
 
 class MicroserviceEnv(gym.Env):
+
     def __init__(self):
         super().__init__()
         load_dotenv()
@@ -27,8 +27,8 @@ class MicroserviceEnv(gym.Env):
         self.custom_api = client.CustomObjectsApi()
         self.deployment_name = "nginx-deployment"
         self.namespace = "default"
-        # self.is_scaling = False
-        # self.target_pod_count = 0
+        self.is_down_scaling = False
+        self.previous_pods = 0
         
         # Prometheus setup
         prometheus_url = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
@@ -210,6 +210,22 @@ class MicroserviceEnv(gym.Env):
             new_pods = current_pods
             state = self._get_state()
 
+            # Check if pod was killed
+            if self.is_down_scaling:
+                # If difference is not 1, then a pod was killed
+                self.is_down_scaling = False
+                if self.previous_pods > current_pods + 1:
+                    self.previous_pods = current_pods
+                    print(f"Pod killed, Reward: -1")
+                    return state, -1, True, False, {
+                    'current_pods': new_pods,
+                    'action': action,
+                    'cpu_usage': state[0],
+                    'memory_usage': state[1],
+                    'response_time': state[2],
+                    'reward': -1
+                }
+
             if action == 0 and current_pods == 1 or action == 2 and current_pods == self.max_pods:
                 print(f"Invalid action, Reward: -1")
                 return state, -1, True, False, {
@@ -222,6 +238,7 @@ class MicroserviceEnv(gym.Env):
                 }
             if action == 0:
                 new_pods = current_pods - 1
+                self.is_down_scaling = True
             elif action == 2:
                 new_pods = current_pods + 1
 
@@ -235,6 +252,7 @@ class MicroserviceEnv(gym.Env):
                 self._inject_chaos()
                 
             time.sleep(self.action_interval)
+
 
             # 2. Get new state
             new_state = self._get_state()
@@ -284,24 +302,11 @@ class MicroserviceEnv(gym.Env):
         deployment.spec.replicas = replicas
         
         # Apply the update
-        try:
-            self.k8s_api.patch_namespaced_deployment(
-                name=self.deployment_name, 
-                namespace=self.namespace, 
-                body=deployment
-            )
-        except KubernetesException as e:
-            if e.status == 409:
-                print("Conflict in _scale_pods, retrying...")
-                time.sleep(0.1)
-                self.k8s_api.patch_namespaced_deployment(
-                    name=self.deployment_name, 
-                    namespace=self.namespace, 
-                    body=deployment
-                )
-            else:
-                print(f"Error in _scale_pods: {str(e)}")
-                raise e
+        self.k8s_api.patch_namespaced_deployment(
+            name=self.deployment_name, 
+            namespace=self.namespace, 
+            body=deployment
+        )
 
     def _get_current_pods(self) -> int:
         """Get current number of pods"""
