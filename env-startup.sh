@@ -19,7 +19,7 @@ echo "Deploying nginx.yaml..."
 kubectl apply -f ./deployments/nginx.yaml
 
 echo "Deploying traffic-generator.yaml..."
-kubectl apply -f ./deployments/traffic-generator.yaml
+kubectl apply -f ./benchmarks/traffic-generator.yaml
 
 echo "Environment setup complete."
 

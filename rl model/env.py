@@ -10,7 +10,7 @@ import os
 from dotenv import load_dotenv
 
 class MicroserviceEnv(gym.Env):
-    def __init__(self, deployment_name='s0', namespace='default'):
+    def __init__(self, deployment_name='nginx', namespace='default'):
         super().__init__()
         load_dotenv()
         self.max_replicas = 15

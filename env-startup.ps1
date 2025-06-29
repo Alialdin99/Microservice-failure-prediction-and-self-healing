@@ -26,7 +26,7 @@ Write-Host "Deploying nginx.yaml..."
 kubectl apply -f ./deployments/nginx.yaml
 
 Write-Host "Deploying traffic-generator.yaml..."
-kubectl apply -f ./deployments/traffic-generator.yaml
+kubectl apply -f ./benchmarks/traffic-generator.yaml
 
 Write-Host "Environment setup complete."
 
@@ -50,6 +50,8 @@ do {
 } while ($true)
 
 Write-Host "Prometheus pod is running."
-$promUrl = minikube service -n monitoring prometheus-nodeport --url
+# Get the actual Prometheus service name
+$promService = kubectl get svc -n monitoring -l app=prometheus -o jsonpath="{.items[0].metadata.name}"
+$promUrl = minikube service -n monitoring $promService --url
 Write-Host "Prometheus URL: $promUrl"
 "PROMETHEUS_URL=$promUrl" | Out-File -FilePath ".env" -Encoding UTF8 
