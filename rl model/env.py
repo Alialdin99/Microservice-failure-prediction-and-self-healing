@@ -116,6 +116,9 @@ class MicroserviceEnv(gym.Env):
                 }
             }
         }
+    # Pod kill exception
+    class PodKillException(Exception):
+        pass
 
     def _inject_chaos(self):
         if self.active_chaos_instances:
@@ -150,7 +153,12 @@ class MicroserviceEnv(gym.Env):
                     )
                     self.active_chaos_instances.add(pod_kill_experiment['metadata']['name'])
                     print("Applied pod kill experiment")
+                    # Wait for all pods to be killed 
+                    self._wait_for_pods_ready(0)
+                    raise self.PodKillException("All pods killed")
                     
+            except self.PodKillException as e:
+                raise e
             except Exception as e:
                 print(f"Failed to inject chaos: {str(e)}")
                 return False
@@ -232,11 +240,11 @@ class MicroserviceEnv(gym.Env):
                 print(f"Scaled to {target_replica} replicas,", end=' ')
               
             # Clean up any existing chaos experiments
-            # self._cleanup_chaos()
+            self._cleanup_chaos()
 
             # 2. Inject chaos (randomly)
-            # if not self.active_chaos_instances:
-            #     self._inject_chaos()
+            if not self.active_chaos_instances:
+                self._inject_chaos()
                 
             # No need for fixed wait time - pods are already ready from _scale_pods
 
@@ -277,6 +285,10 @@ class MicroserviceEnv(gym.Env):
                 'response_time': new_state[2],
                 'reward': reward
             }
+        except self.PodKillException as e:
+            print(f"Pod kill exception: {e}")
+            state = self._get_state()
+            return state, -50, True, False, {'error': 'All pods killed'}
         except KubernetesException as e:
             # Specific handling for k8s errors
             print(f"Kubernetes API Error: {e.reason}, Reward: -50")
