@@ -420,6 +420,7 @@ class MicroserviceEnv(gym.Env):
         
     def _calculate_reward(self, new_state: np.ndarray) -> float:
         annotations = self._get_annotations()
+        # Reward for using fewer replicas
         r1 = (self.max_replicas - new_state[2]) / self.max_replicas
         
         r2 = 0
@@ -427,16 +428,20 @@ class MicroserviceEnv(gym.Env):
         latency = new_state[3]
         latencySoftConstraint = float(annotations.get('latencySoftConstraint', -1))
         latencyHardConstraint = float(annotations.get('latencyHardConstraint', -1))
+
         if latencySoftConstraint != -1 and latencyHardConstraint != -1:
             if latency > latencyHardConstraint:
-                r2 = 0
+                r2 = -1  # Penalize for violating hard constraint
                 terminated = True
-            elif latencySoftConstraint < latency <= latencyHardConstraint:
-                r2 = 0.5
-            elif latency <= latencySoftConstraint:
+            elif latency > latencySoftConstraint:
+                # Reward decreases linearly from 1 to 0 between soft and hard constraints
+                r2 = 1.0 - (latency - latencySoftConstraint) / (latencyHardConstraint - latencySoftConstraint)
+            else:
+                # Maximum reward if latency is within the soft constraint
                 r2 = 1
 
-        reward = r1 + r2
+        # Combine rewards with weighting, giving more weight to latency performance
+        reward = 0.3 * r1 + 0.7 * r2
         return reward, terminated
 
     def get_pod_history(self):
