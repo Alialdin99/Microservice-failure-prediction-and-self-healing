@@ -286,7 +286,7 @@ class MicroserviceEnv(gym.Env):
                 'reward': reward
             }
         except self.PodKillException as e:
-            print(f"Pod kill exception: {e}")
+            print(f"Pod kill exception: {e}, Reward: -50")
             state = self._get_state()
             return state, -50, True, False, {'error': 'All pods killed'}
         except KubernetesException as e:
