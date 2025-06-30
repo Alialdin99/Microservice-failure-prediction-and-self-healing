@@ -418,7 +418,7 @@ class MicroserviceEnv(gym.Env):
             # Return a zeroed array that matches the space shape
             return np.zeros(self.observation_space.shape, dtype=np.float32)
         
-    def _calculate_reward(self, new_state: np.ndarray) -> float:
+    def _calculate_reward(self, new_state: np.ndarray) -> tuple[float, bool]:
         annotations = self._get_annotations()
         # Reward for using fewer replicas
         r1 = (self.max_replicas - new_state[2]) / self.max_replicas
