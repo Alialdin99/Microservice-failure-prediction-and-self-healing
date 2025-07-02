@@ -7,9 +7,9 @@ from dotenv import load_dotenv
 from chaos_mesh.chaos_experiments import ChaosExperimentManager, PodKillException
 from k8s.k8s_client import K8sClient
 from monitoring.prometheus.prometheus_client import PrometheusClient
-from rl_model.reward import RewardCalculator
-from rl_model.state_builder import StateBuilder
-from rl_model.config import TRAINING_CONFIG
+from .reward import RewardCalculator
+from .state_builder import StateBuilder
+from .config import TRAINING_CONFIG
 
 class MicroserviceEnv(gym.Env):
     def __init__(self, deployment_name='nginx', namespace='default'):
