@@ -9,6 +9,11 @@ from kubernetes.client.rest import ApiException as KubernetesException
 import os
 from dotenv import load_dotenv
 from chaos_mesh.chaos_experiments import ChaosExperimentManager, PodKillException
+from k8s.k8s_client import K8sClient
+from monitoring.prometheus.prometheus_client import PrometheusClient
+from rl_model.reward import RewardCalculator
+from rl_model.state_builder import StateBuilder
+from rl_model.config import TRAINING_CONFIG
 
 class MicroserviceEnv(gym.Env):
     def __init__(self, deployment_name='nginx', namespace='default'):
@@ -36,8 +41,7 @@ class MicroserviceEnv(gym.Env):
         self.namespace = namespace
         
         # Prometheus setup
-        prometheus_url = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
-        self.prom = PrometheusConnect(url=prometheus_url)
+        self.prom_client = PrometheusClient()
         self.metric_window = "30s"  # Metrics averaging window
         
         # Time control
@@ -51,6 +55,7 @@ class MicroserviceEnv(gym.Env):
         self.current_step = 0
         self.max_steps=200
         # Chaos Mesh setup
+        self.k8s_client = K8sClient(self.deployment_name, self.namespace)
         self.chaos_manager = ChaosExperimentManager(self.custom_api, self.deployment_name, self.namespace)
 
     def reset(self, seed=None, options=None):
@@ -67,7 +72,14 @@ class MicroserviceEnv(gym.Env):
         self.current_step = 0
         return state, {}
 
-    def step(self, action):
+    def step(self, action: int) -> tuple:
+        """
+        Take an action in the environment.
+        Args:
+            action: The action to take.
+        Returns:
+            Tuple of (new_state, reward, done, truncated, info)
+        """
         try:
             state = self._get_state()
             print(state, end=' ')
@@ -109,7 +121,11 @@ class MicroserviceEnv(gym.Env):
                 print(f"Latency change: {latency_change:.2f}ms (from {state[3]:.2f} to {new_state[3]:.2f})", end=' ')
 
             # 3. Calculate reward
-            reward, done = self._calculate_reward(new_state)
+            reward, done = RewardCalculator.calculate_reward(
+                new_state,
+                self._get_annotations(),
+                self.max_replicas
+            )
             print(f'Reward: {reward:.4f}')
 
             # Track pod counts
@@ -155,147 +171,52 @@ class MicroserviceEnv(gym.Env):
             }
 
     def _wait_for_pods_ready(self, expected_replicas: int, timeout: int = 60):
-        """Wait for pods to be ready after scaling"""
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            try:
-                # Get deployment status
-                deployment = self.k8s_api.read_namespaced_deployment(
-                    name=self.deployment_name, namespace=self.namespace
-                )
-                
-                # Check if desired replicas match expected
-                if deployment.spec.replicas != expected_replicas:
-                    print(f"Deployment replicas mismatch: expected {expected_replicas}, got {deployment.spec.replicas}")
-                    return False
-                
-                # Check if all pods are ready
-                if (deployment.status.ready_replicas == expected_replicas and 
-                    deployment.status.available_replicas == expected_replicas):
-                    print(f"All {expected_replicas} pods are ready")
-                    return True
-                
-                print(f"Waiting for pods: {deployment.status.ready_replicas}/{expected_replicas} ready")
-                time.sleep(2)
-                
-            except Exception as e:
-                print(f"Error checking pod readiness: {str(e)}")
-                time.sleep(2)
-        
-        print(f"Timeout waiting for {expected_replicas} pods to be ready")
-        return False
+        return self.k8s_client.wait_for_pods_ready(expected_replicas, timeout)
 
     def _scale_pods(self, replicas: int):
-        """Scale the Kubernetes deployment"""
-        # Get the latest deployment state
-        deployment = self.k8s_api.read_namespaced_deployment(
-            name=self.deployment_name, 
-            namespace=self.namespace
-        )
-        
-        # Update the replicas
-        deployment.spec.replicas = int(replicas)
-        
-        # Apply the update
-        self.k8s_api.patch_namespaced_deployment(
-            name=self.deployment_name, 
-            namespace=self.namespace, 
-            body=deployment
-        )
-        
-        # Wait for pods to be ready
-        if not self._wait_for_pods_ready(replicas):
-            print(f"Warning: Pods may not be fully ready after scaling to {replicas} replicas")
-        else:
-            # Small stabilization period for load balancer to distribute traffic
-            time.sleep(3)
+        self.k8s_client.scale_deployment(replicas)
 
     def _get_current_replicas(self) -> int:
-        """Get current number of pods"""
-        deployment = self.k8s_api.read_namespaced_deployment(
-            name=self.deployment_name, namespace=self.namespace
-        )
-        return deployment.spec.replicas
+        return self.k8s_client.get_current_replicas()
 
     def _get_annotations(self):
-        deployment = self.k8s_api.read_namespaced_deployment(
-            name=self.deployment_name, namespace=self.namespace
-        )
-        return deployment.metadata.annotations or {}
+        return self.k8s_client.get_annotations()
 
-    def _get_state(self):
+    def _get_state(self) -> np.ndarray:
+        """
+        Query Prometheus and Kubernetes to build the current state observation.
+        Returns:
+            Numpy array representing the state.
+        """
         try:
-            # --- Get Core Metrics ---
-            cpu_query = self.prom.custom_query(f'sum(rate(container_cpu_usage_seconds_total{{namespace="{self.namespace}", pod=~"{self.deployment_name}-.*"}}[1m])) * 100')
-            cpu_usage_percent = float(cpu_query[0]['value'][1]) if cpu_query else 0.0
-            
-            memory_query = self.prom.custom_query(f'sum(container_memory_working_set_bytes{{namespace="{self.namespace}", pod=~"{self.deployment_name}-.*"}})')
-            memory_bytes = float(memory_query[0]['value'][1]) if memory_query else 0.0
-            
-            # --- Get Application Performance (Latency & RPS) ---
-            # p95 latency (ms) - improved query with better time window
-            p95_query = self.prom.custom_query(
+            cpu_usage_percent = self.prom_client.query(
+                f'sum(rate(container_cpu_usage_seconds_total{{namespace="{self.namespace}", pod=~"{self.deployment_name}-.*"}}[1m])) * 100'
+            )
+            memory_bytes = self.prom_client.query(
+                f'sum(container_memory_working_set_bytes{{namespace="{self.namespace}", pod=~"{self.deployment_name}-.*"}})'
+            )
+            p95_latency_ms = self.prom_client.query(
                 f'histogram_quantile(0.95, sum(rate(istio_request_duration_milliseconds_bucket{{reporter="destination", destination_workload="{self.deployment_name}"}}[5m])) by (le))'
             )
-            p95_latency_ms = float(p95_query[0]['value'][1]) if p95_query else 0.0
-
-            # RPS (requests per second)
-            rps_query = self.prom.custom_query(
+            rps = self.prom_client.query(
                 f'sum(rate(istio_requests_total{{reporter="destination", destination_workload="{self.deployment_name}"}}[1m]))'
             )
-            rps = float(rps_query[0]['value'][1]) if rps_query else 0.0
-
-            # --- Get Pod Count ---
             n_replicas = self._get_current_replicas()
-            
-            # --- Normalize Memory ---
-            max_memory_per_pod = 512 * 1024 * 1024 # 512MiB
-            total_max_memory = max_memory_per_pod * n_replicas
-            memory_normalized = memory_bytes / total_max_memory if total_max_memory > 0 else 0.0
-
-            # --- Assemble State ---
-            current_state = np.array([
+            max_memory_per_pod = TRAINING_CONFIG.get('max_memory_per_pod', 512 * 1024 * 1024)
+            current_state = StateBuilder.build_state(
                 cpu_usage_percent,
-                memory_normalized,
+                memory_bytes,
                 n_replicas,
                 p95_latency_ms,
-                rps
-            ], dtype=np.float32)
-            
-            # Update previous state for the next step
+                rps,
+                max_memory_per_pod
+            )
             self.previous_state = current_state
             return current_state
         except Exception as e:
             print(f"Error getting state: {str(e)}")
-            # Return a zeroed array that matches the space shape
             return np.zeros(self.observation_space.shape, dtype=np.float32)
         
-    def _calculate_reward(self, new_state: np.ndarray) -> tuple[float, bool]:
-        annotations = self._get_annotations()
-        # Reward for using fewer replicas
-        r1 = (self.max_replicas - new_state[2]) / self.max_replicas
-        
-        r2 = 0
-        terminated = False
-        latency = new_state[3]
-        latencySoftConstraint = float(annotations.get('latencySoftConstraint', -1))
-        latencyHardConstraint = float(annotations.get('latencyHardConstraint', -1))
-
-        if latencySoftConstraint != -1 and latencyHardConstraint != -1:
-            if latency > latencyHardConstraint:
-                r2 = -1  # Penalize for violating hard constraint
-                terminated = True
-            elif latency > latencySoftConstraint:
-                # Reward decreases linearly from 1 to 0 between soft and hard constraints
-                r2 = 1.0 - (latency - latencySoftConstraint) / (latencyHardConstraint - latencySoftConstraint)
-            else:
-                # Maximum reward if latency is within the soft constraint
-                r2 = 1
-
-        # Combine rewards with weighting, giving more weight to latency performance
-        reward = 0.3 * r1 + 0.7 * r2
-        return reward, terminated
-
     def get_pod_history(self):
         """Return the history of pod counts and steps"""
         return self.steps, self.pod_counts

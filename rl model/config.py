@@ -24,6 +24,9 @@ TRAINING_CONFIG = {
             vf=[64, 64]        # Keep larger network for capacity
         )]
     ),
+    "max_memory_per_pod": 512 * 1024 * 1024,  # 512MiB
+    "action_interval": 30,  # Seconds between actions
+    "metric_window": "30s",  # Metrics averaging window
 }
 
 # Training settings
