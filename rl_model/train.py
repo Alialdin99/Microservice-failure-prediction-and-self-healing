@@ -76,7 +76,8 @@ def main():
         clip_range=wandb.config.clip_range,
         ent_coef=wandb.config.ent_coef,
         verbose=1,
-        tensorboard_log=PATHS["tensorboard_dir"]
+        tensorboard_log=PATHS["tensorboard_dir"],
+        device='cpu'  # Force CPU usage to avoid CUDA warning
     )
 
     # Train the model

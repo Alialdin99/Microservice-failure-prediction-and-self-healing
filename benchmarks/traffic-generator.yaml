@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-traffic-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-traffic-generator
+  template:
+    metadata:
+      labels:
+        app: nginx-traffic-generator
+    spec:
+      containers:
+      - name: busybox
+        image: busybox:1.36
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            while true; do
+              for i in $(seq 1 5000); do
+                wget -qO- http://nginx.default.svc.cluster.local:80/ > /dev/null &
+              done
+              wait
+              sleep 1
+            done
