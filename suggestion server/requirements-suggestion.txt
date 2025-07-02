@@ -1,0 +1,4 @@
+flask
+gunicorn
+requests
+prometheus-api-client

@@ -1,0 +1,39 @@
+# suggestion-deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: suggestion-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: suggestion-server
+  template:
+    metadata:
+      labels:
+        app: suggestion-server
+    spec:
+      containers:
+      - name: suggestion
+        image: marwanhabib/custom-hpa-suggestion-flask:v1
+        ports:
+        - containerPort: 5000
+        env:
+        - name: PROMETHEUS_URL
+          value: "http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local"
+        - name: MODEL_SERVICE_URL
+          value: "http://model-service:8000/predict"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: suggestion-service
+spec:
+  selector:
+    app: suggestion-server
+  ports:
+  # The service listens on port 5000 and forwards to the container's port 5000
+  - protocol: TCP
+    port: 5000
+    targetPort: 5000

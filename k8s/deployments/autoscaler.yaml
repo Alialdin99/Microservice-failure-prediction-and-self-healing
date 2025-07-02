@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: custom-hpa-sa
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: custom-hpa-role
+rules:
+- apiGroups: ["apps"]
+  resources: ["deployments", "deployments/scale"]
+  verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: custom-hpa-rolebinding
+subjects:
+- kind: ServiceAccount
+  name: custom-hpa-sa
+roleRef:
+  kind: Role
+  name: custom-hpa-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: custom-hpa-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: custom-hpa-controller
+  template:
+    metadata:
+      labels:
+        app: custom-hpa-controller
+    spec:
+      serviceAccountName: custom-hpa-sa
+      containers:
+      - name: controller
+        image: marwanhabibcustom-hpa-controller:v1
+        env:
+        - name: SUGGESTION_SERVICE_URL
+          value: "http://suggestion-service:5000/suggestion"
+        - name: POLL_INTERVAL_SECONDS
+          value: "60"
