@@ -15,11 +15,11 @@ do {
 
 Write-Host "Installing monitoring framework..."
 # Make sure the monitoring script is executable (if using Git Bash or WSL)
-if (Test-Path "Monitoring/monitoring-install.ps1") {
-    & "Monitoring/monitoring-install.ps1"
+if (Test-Path "monitoring/monitoring-install.ps1") {
+    & "monitoring/monitoring-install.ps1"
 } else {
     Write-Host "Warning: monitoring-install.ps1 not found, trying shell script..."
-    bash Monitoring/monitoring-install.sh
+    bash monitoring/monitoring-install.sh
 }
 
 Write-Host "Deploying nginx.yaml..."

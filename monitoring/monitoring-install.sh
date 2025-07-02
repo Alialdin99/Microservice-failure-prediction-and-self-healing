@@ -8,8 +8,8 @@ helm repo update
 helm install prometheus prometheus-community/kube-prometheus-stack -n monitoring
 
 # Prometheus (30000) and Grafana (30001) NodePort Services
-kubectl apply -f ./Monitoring/prometheus-nodeport.yaml -n monitoring
-kubectl apply -f ./Monitoring/grafana-nodeport.yaml -n monitoring
+kubectl apply -f ./monitoring/prometheus-nodeport.yaml -n monitoring
+kubectl apply -f ./monitoring/grafana-nodeport.yaml -n monitoring
 
 # Istio
 helm repo add istio https://istio-release.storage.googleapis.com/charts
@@ -21,4 +21,4 @@ helm install istio-ingressgateway istio/gateway -n istio-system
 kubectl label namespace default istio-injection=enabled
 
 # Istio - Prometeus integration
-kubectl apply -f ./Monitoring/istio-prometheus-operator.yaml
+kubectl apply -f ./monitoring/istio-prometheus-operator.yaml

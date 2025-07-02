@@ -12,8 +12,8 @@ while [[ $(minikube status --format='{{.Host}}') != "Running" ]]; do
 done
 
 echo "Installing monitoring framework..."
-chmod +x Monitoring/monitoring-install.sh
-./Monitoring/monitoring-install.sh
+chmod +x monitoring/monitoring-install.sh
+./monitoring/monitoring-install.sh
 
 echo "Deploying nginx.yaml..."
 kubectl apply -f ./deployments/nginx.yaml

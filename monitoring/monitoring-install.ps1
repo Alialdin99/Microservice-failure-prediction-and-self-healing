@@ -18,8 +18,8 @@ helm install prometheus prometheus-community/kube-prometheus-stack -n monitoring
 
 # Prometheus (30000) and Grafana (30001) NodePort Services
 Write-Host "Applying NodePort services..."
-kubectl apply -f ./Monitoring/prometheus-nodeport.yaml -n monitoring
-kubectl apply -f ./Monitoring/grafana-nodeport.yaml -n monitoring
+kubectl apply -f ./monitoring/prometheus-nodeport.yaml -n monitoring
+kubectl apply -f ./monitoring/grafana-nodeport.yaml -n monitoring
 
 # Istio
 Write-Host "Setting up Istio..."
@@ -33,6 +33,6 @@ kubectl label namespace default istio-injection=enabled
 
 # Istio - Prometheus integration
 Write-Host "Applying Istio-Prometheus integration..."
-kubectl apply -f ./Monitoring/istio-prometheus-operator.yaml
+kubectl apply -f ./monitoring/istio-prometheus-operator.yaml
 
 Write-Host "Monitoring installation complete!" 
