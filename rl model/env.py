@@ -1,12 +1,8 @@
 import time
-import random
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
-from kubernetes import client, config
-from prometheus_api_client import PrometheusConnect
 from kubernetes.client.rest import ApiException as KubernetesException
-import os
 from dotenv import load_dotenv
 from chaos_mesh.chaos_experiments import ChaosExperimentManager, PodKillException
 from k8s.k8s_client import K8sClient
@@ -19,55 +15,37 @@ class MicroserviceEnv(gym.Env):
     def __init__(self, deployment_name='nginx', namespace='default'):
         super().__init__()
         load_dotenv()
-        self.max_replicas = 15
-        
-        # Action and observation spaces
-        self.action_space = spaces.Discrete(3)  # 0=down, 1=nothing, 2=up
-        # [cpu, mem, replicas, latency, rps]
+        self.max_replicas = TRAINING_CONFIG.get('max_replicas', 15)
+        # Action space: 0=down, 1=nothing, 2=up
+        self.action_space = spaces.Discrete(3)
+        # Observation space: [cpu, mem, replicas, latency, rps]
         self.observation_space = spaces.Box(
             low=np.array([0, 0, 1, 0, -100], dtype=np.float32),
             high=np.array([500, 1, self.max_replicas, 5000, 100], dtype=np.float32),
             shape=(5,),
             dtype=np.float32
         )
-        self.previous_state = np.zeros(self.observation_space.shape, dtype=np.float32)
-
-        # Kubernetes setup
-        config.load_kube_config()
-        self.k8s_api = client.AppsV1Api()
-        self.custom_api = client.CustomObjectsApi()
-
         self.deployment_name = deployment_name
         self.namespace = namespace
-        
-        # Prometheus setup
         self.prom_client = PrometheusClient()
-        self.metric_window = "30s"  # Metrics averaging window
-        
-        # Time control
-        self.action_interval = 30  # Seconds between actions
-        # Initial seed
-        self.np_random = None
-        
-        # Tracking pod counts
+        self.metric_window = TRAINING_CONFIG.get('metric_window', '30s')
+        self.action_interval = TRAINING_CONFIG.get('action_interval', 30)
         self.pod_counts = []
         self.steps = []
         self.current_step = 0
-        self.max_steps=200
-        # Chaos Mesh setup
+        self.max_steps = 200
         self.k8s_client = K8sClient(self.deployment_name, self.namespace)
-        self.chaos_manager = ChaosExperimentManager(self.custom_api, self.deployment_name, self.namespace)
+        self.chaos_manager = ChaosExperimentManager(self.k8s_client.k8s_api, self.deployment_name, self.namespace)
 
     def reset(self, seed=None, options=None):
-        # Initialize RNG
+        """
+        Reset the environment to an initial state.
+        Waits for stabilization, scales pods to current count, and returns the initial state.
+        """
         super().reset(seed=seed)
-        self.np_random = np.random.default_rng(seed)
-        
-        time.sleep(self.action_interval)  # Wait for stabilization
+        time.sleep(self.action_interval)
         self._scale_pods(self._get_current_replicas())
-        time.sleep(self.action_interval)  # Wait for stabilization
-        
-        # Get initial state
+        time.sleep(self.action_interval)
         state = self._get_state()
         self.current_step = 0
         return state, {}
@@ -76,7 +54,7 @@ class MicroserviceEnv(gym.Env):
         """
         Take an action in the environment.
         Args:
-            action: The action to take.
+            action: The action to take (0=down, 1=nothing, 2=up).
         Returns:
             Tuple of (new_state, reward, done, truncated, info)
         """
@@ -86,7 +64,6 @@ class MicroserviceEnv(gym.Env):
             replicas = int(state[2])
             replica_change = action - 1
             target_replica = replicas + replica_change
-            
             if replica_change == 0:
                 print(f"No scaling (replicas remain {replicas}),", end=' ')
             elif target_replica < 1 or target_replica > self.max_replicas:
@@ -102,38 +79,29 @@ class MicroserviceEnv(gym.Env):
             else:
                 self._scale_pods(target_replica)
                 print(f"Scaled to {target_replica} replicas,", end=' ')
-              
             # Clean up any existing chaos experiments
             self.chaos_manager.cleanup_chaos()
-
-            # 2. Inject chaos (randomly)
+            # Inject chaos randomly if none are active
             if not self.chaos_manager.active_chaos_instances:
                 self.chaos_manager.inject_chaos(self._wait_for_pods_ready)
-                
-            # No need for fixed wait time - pods are already ready from _scale_pods
-
-            # 2. Get new state
+            # Get new state after action and chaos
             new_state = self._get_state()
-            
-            # Debug information for latency tracking
+            # Print latency change if scaling occurred
             if replica_change != 0:
                 latency_change = new_state[3] - state[3]
                 print(f"Latency change: {latency_change:.2f}ms (from {state[3]:.2f} to {new_state[3]:.2f})", end=' ')
-
-            # 3. Calculate reward
+            # Calculate reward and check if episode is done
             reward, done = RewardCalculator.calculate_reward(
                 new_state,
                 self._get_annotations(),
                 self.max_replicas
             )
             print(f'Reward: {reward:.4f}')
-
-            # Track pod counts
+            # Track pod counts and steps for analysis
             self.current_step += 1
             self.steps.append(self.current_step)
             self.pod_counts.append(target_replica)
-
-            # Check for max steps
+            # Check for max steps (truncate episode)
             if self.current_step >= self.max_steps:
                 return new_state, reward, False, True, {
                     'current_replicas': target_replica,
@@ -144,7 +112,6 @@ class MicroserviceEnv(gym.Env):
                     'reward': reward,
                     'truncated': True
                 }
-            
             return new_state, reward, done, False, {
                 'current_replicas': target_replica,
                 'action': action,
@@ -158,7 +125,6 @@ class MicroserviceEnv(gym.Env):
             state = self._get_state()
             return state, -50, True, False, {'error': 'All pods killed'}
         except KubernetesException as e:
-            # Specific handling for k8s errors
             print(f"Kubernetes API Error: {e.reason}, Reward: -50")
             state = self._get_state()
             return state, -50, True, False, {'error': e.reason}
@@ -171,15 +137,19 @@ class MicroserviceEnv(gym.Env):
             }
 
     def _wait_for_pods_ready(self, expected_replicas: int, timeout: int = 60):
+        """Wait for the specified number of pods to be ready."""
         return self.k8s_client.wait_for_pods_ready(expected_replicas, timeout)
 
     def _scale_pods(self, replicas: int):
+        """Scale the Kubernetes deployment to the specified number of replicas."""
         self.k8s_client.scale_deployment(replicas)
 
     def _get_current_replicas(self) -> int:
+        """Get the current number of replicas for the deployment."""
         return self.k8s_client.get_current_replicas()
 
     def _get_annotations(self):
+        """Get deployment annotations from Kubernetes."""
         return self.k8s_client.get_annotations()
 
     def _get_state(self) -> np.ndarray:
@@ -211,12 +181,11 @@ class MicroserviceEnv(gym.Env):
                 rps,
                 max_memory_per_pod
             )
-            self.previous_state = current_state
             return current_state
         except Exception as e:
             print(f"Error getting state: {str(e)}")
             return np.zeros(self.observation_space.shape, dtype=np.float32)
-        
+
     def get_pod_history(self):
-        """Return the history of pod counts and steps"""
+        """Return the history of pod counts and steps for analysis."""
         return self.steps, self.pod_counts
