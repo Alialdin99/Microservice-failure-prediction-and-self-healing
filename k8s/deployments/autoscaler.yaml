@@ -1,12 +1,12 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: custom-hpa-sa
+  name: custom-autoscaler-sa
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: custom-hpa-role
+  name: custom-autoscaler-role
 rules:
 - apiGroups: ["apps"]
   resources: ["deployments", "deployments/scale"]
@@ -15,35 +15,35 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: custom-hpa-rolebinding
+  name: custom-autoscaler-rolebinding
 subjects:
 - kind: ServiceAccount
-  name: custom-hpa-sa
+  name: custom-autoscaler-sa
 roleRef:
   kind: Role
-  name: custom-hpa-role
+  name: custom-autoscaler-role
   apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: custom-hpa-controller
+  name: custom-autoscaler-controller
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: custom-hpa-controller
+      app: custom-autoscaler-controller
   template:
     metadata:
       labels:
-        app: custom-hpa-controller
+        app: custom-autoscaler-controller
       annotations:
         sidecar.istio.io/inject: "false"
     spec:
-      serviceAccountName: custom-hpa-sa
+      serviceAccountName: custom-autoscaler-sa
       containers:
       - name: controller
-        image: marwanhabib/custom-hpa-controller:v1
+        image: marwanhabib/custom-autoscaler-controller:v1
         imagePullPolicy: Always
         env:
         - name: SUGGESTION_SERVICE_URL

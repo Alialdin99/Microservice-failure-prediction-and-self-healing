@@ -16,10 +16,10 @@ spec:
       annotations:
         sidecar.istio.io/inject: "false"
     spec:
-      serviceAccountName: custom-hpa-sa
+      serviceAccountName: custom-autoscaler-sa
       containers:
       - name: suggestion
-        image: marwanhabib/custom-hpa-suggestion-flask:v1
+        image: marwanhabib/custom-autoscaler-suggestion-flask:v1
         imagePullPolicy: Always
         ports:
         - containerPort: 5000

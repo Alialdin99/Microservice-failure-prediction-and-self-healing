@@ -63,9 +63,10 @@ def get_suggestion():
             "status": "error",
             "message": "Failed to fetch metrics from Prometheus"
         }), 500
-    
     # 2. Get prediction from RL model
     action = get_rl_prediction(metrics)
+    logging.info(f'Action: {action}')
+    
     # 3. return suggested action
     return action
 

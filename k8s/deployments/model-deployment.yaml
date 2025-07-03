@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: model
-        image: marwanhabib/custom-hpa-model-flask:v1
+        image: marwanhabib/custom-autoscaler-model-flask:v1
         ports:
         - containerPort: 8000
         imagePullPolicy: Always
