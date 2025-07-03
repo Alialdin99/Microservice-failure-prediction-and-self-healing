@@ -19,6 +19,7 @@ spec:
         image: marwanhabib/custom-hpa-model-flask:v1
         ports:
         - containerPort: 8000
+        imagePullPolicy: Always
 ---
 apiVersion: v1
 kind: Service
