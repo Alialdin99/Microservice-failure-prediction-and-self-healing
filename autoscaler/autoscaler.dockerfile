@@ -4,7 +4,7 @@ WORKDIR /app
 COPY requirements-controller.txt .
 RUN pip install --no-cache-dir -r requirements-controller.txt
 
-COPY autoscaler.py .
+COPY . .
 
 # This is a script, not a server, so we run it directly with python
 CMD ["python", "autoscaler.py"]

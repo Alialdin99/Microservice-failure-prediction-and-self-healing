@@ -9,7 +9,7 @@ from rl_model.state_builder import StateBuilder
 app = Flask(__name__)
 
 # Configuration
-RL_API_URL = os.getenv('RL_API_URL', 'http://localhost:8000/predict') 
+RL_API_URL = os.getenv('RL_API_URL', 'http://model-service:8000/predict') 
 
 
 def fetch_prometheus_metrics(deployment, namespace):

@@ -4,8 +4,8 @@ WORKDIR /app
 COPY requirements-suggestion.txt .
 RUN pip install --no-cache-dir -r requirements-suggestion.txt
 
-COPY suggestion_server.py .
+COPY . .
 
-EXPOSE 5000
+EXPOSE 5000 
 
 CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:5000", "suggestion_server:app"]
