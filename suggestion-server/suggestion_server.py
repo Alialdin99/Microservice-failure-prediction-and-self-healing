@@ -4,7 +4,9 @@ import datetime
 import os
 from utils.prometheus_client import PrometheusClient
 from utils.k8s_client import K8sClient
+import logging
 
+logging.basicConfig(level=logging.INFO)
 app = Flask(__name__)
 
 # Configuration
@@ -30,7 +32,7 @@ def fetch_prometheus_metrics(deployment, namespace):
         k8s_client = K8sClient(deployment_name=deployment, namespace=namespace)
         metrics['replicas'] = k8s_client.get_current_replicas()
     except Exception as e:
-        print(f"Error fetching replicas from Kubernetes: {str(e)}")
+        logging.info(f"Error fetching replicas from Kubernetes: {str(e)}")
         metrics['replicas'] = None
     return metrics
 
