@@ -1,14 +1,14 @@
 import os
 import wandb
-from env import MicroserviceEnv
+from .env import MicroserviceEnv
 from stable_baselines3 import PPO
 from wandb.integration.sb3 import WandbCallback
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import EvalCallback
 
-from callbacks import PodTrackingCallback
-from config import TRAINING_CONFIG, TRAINING_SETTINGS, PATHS
+from .callbacks import PodTrackingCallback
+from .config import TRAINING_CONFIG, TRAINING_SETTINGS, PATHS
 
 def setup_directories():
     """Create necessary directories if they don't exist"""

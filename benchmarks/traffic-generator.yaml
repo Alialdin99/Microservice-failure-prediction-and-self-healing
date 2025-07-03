@@ -1,27 +1,49 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k6-test-script
+  namespace: default
+data:
+  k6-test.js: |
+    import http from 'k6/http';
+    import { sleep } from 'k6';
+    export let options = {
+      stages: [
+        { duration: '5m', target: 100 },
+        { duration: '30m', target: 100 },
+        { duration: '5m', target: 0 },
+      ],
+    };
+    export default function () {
+      http.get('http://nginx.default.svc.cluster.local:80/');
+      sleep(1);
+    }
+
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: nginx-traffic-generator
+  name: k6-traffic-generator
+  namespace: default
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: nginx-traffic-generator
+      app: k6-traffic-generator
   template:
     metadata:
       labels:
-        app: nginx-traffic-generator
+        app: k6-traffic-generator
     spec:
       containers:
-      - name: busybox
-        image: busybox:1.36
-        command: ["/bin/sh", "-c"]
-        args:
-          - |
-            while true; do
-              for i in $(seq 1 5000); do
-                wget -qO- http://nginx.default.svc.cluster.local:80/ > /dev/null &
-              done
-              wait
-              sleep 1
-            done
+      - name: k6
+        image: grafana/k6:latest
+        command: ["k6", "run", "/scripts/k6-test.js"]
+        volumeMounts:
+        - name: k6-script
+          mountPath: /scripts
+      volumes:
+      - name: k6-script
+        configMap:
+          name: k6-test-script
+      restartPolicy: Always
