@@ -6,9 +6,7 @@ WORKDIR /app
 COPY requirements-model.txt .
 RUN pip install --no-cache-dir -r requirements-model.txt
 
-# Copy the model and the application script
-COPY best_model.zip .
-COPY model_server.py .
+COPY . .
 
 EXPOSE 8000
 

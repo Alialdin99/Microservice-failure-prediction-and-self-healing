@@ -4,11 +4,12 @@ import datetime
 import os
 from monitoring.prometheus.prometheus_client import PrometheusClient
 from k8s.k8s_client import K8sClient
+from rl_model.state_builder import StateBuilder
 
 app = Flask(__name__)
 
 # Configuration
-RL_API_URL = os.getenv('RL_API_URL', 'http://model-service:8000/predict') 
+RL_API_URL = os.getenv('RL_API_URL', 'http://localhost:8000/predict') 
 
 
 def fetch_prometheus_metrics(deployment, namespace):
@@ -16,7 +17,7 @@ def fetch_prometheus_metrics(deployment, namespace):
     # Prometheus queries
     PROM_QUERIES = {
     'cpu_usage': f'sum(rate(container_cpu_usage_seconds_total{{namespace="{namespace}", pod=~"{deployment}-.*"}}[1m]))',
-    'mem_usage': f'sum(container_memory_usage_bytes{{namespace="{namespace}", pod=~"{deployment}-.*"}})',
+    'memory_usage': f'sum(container_memory_usage_bytes{{namespace="{namespace}", pod=~"{deployment}-.*"}})',
     'latency': f'histogram_quantile(0.95, sum(rate(istio_request_duration_milliseconds_bucket{{reporter="destination", destination_workload="{deployment}"}}[5m])) by (le))',
     'rps': f'sum(rate(istio_requests_total{{reporter="destination", destination_workload="{deployment}"}}[1m]))'
     }
@@ -25,7 +26,6 @@ def fetch_prometheus_metrics(deployment, namespace):
     for name, query in PROM_QUERIES.items():
         value = prom_client.query(query)
         metrics[name] = value
-
     # Add current replicas from Kubernetes
     try:
         k8s_client = K8sClient(deployment_name=deployment, namespace=namespace)
@@ -40,7 +40,7 @@ def get_rl_prediction(metrics):
     try:
         response = requests.post(RL_API_URL, json=metrics)
         response.raise_for_status()
-        return response.json().get('action')
+        return response.json()
     except Exception as e:
         print(f"RL API error : {str(e)}")
     return 1
@@ -51,7 +51,7 @@ def get_suggestion():
     """Endpoint for Kubernetes to get scaling recommendations"""
     try:
         deployment = request.args['deployment']
-        namespace = request.args['namespace', 'default']
+        namespace = request.args.get('namespace', 'default')
     except KeyError as e:
         return jsonify({"error": f"Missing required query parameter: {e}"}), 400
 
@@ -65,9 +65,8 @@ def get_suggestion():
     
     # 2. Get prediction from RL model
     action = get_rl_prediction(metrics)
-
     # 3. return suggested action
-    return jsonify(action)
+    return action
 
 
 # Health check endpoint
@@ -77,3 +76,7 @@ def health_check():
         "status": "healthy",
         "timestamp": datetime.datetime.utcnow().isoformat()
     })
+
+if __name__ == '__main__':
+    # This block is for local testing. In production, Gunicorn runs the app.
+    app.run(host='0.0.0.0', port=5000)

@@ -1,12 +1,15 @@
 from flask import Flask, request, jsonify
 from stable_baselines3 import PPO
-import numpy as np
+from rl_model.state_builder import StateBuilder
+from pathlib import Path
 
 app = Flask(__name__)
 
 # Load the model once when the application starts.
 try:
-    model = PPO.load("/app/your_model.zip")
+    script_dir = Path(__file__).parent
+    model_path = script_dir / "best_model"
+    model = PPO.load(str(model_path))
     print("Model loaded successfully.")
 except Exception as e:
     print(f"FATAL: Could not load model. Error: {e}")
@@ -23,13 +26,13 @@ def predict_action():
 
     try:
         # Construct the observation array from the received JSON
-        observation = np.array([
-            data['cpu_usage'],
-            data['mem_usage'],
-            data['n_replicas'],
-            data['latency'],
-            data['rps']
-        ], dtype=np.float32)
+        observation = StateBuilder.build_state(
+            cpu_usage_percent=data['cpu_usage'],
+            memory_bytes=data['memory_usage'],
+            n_replicas=data['replicas'],
+            p95_latency_ms=data['latency'],
+            rps=data['rps']
+        )
     except KeyError as e:
         return jsonify({"error": f"Missing key in request: {e}"}), 400
 
