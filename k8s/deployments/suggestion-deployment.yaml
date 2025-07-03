@@ -13,6 +13,8 @@ spec:
     metadata:
       labels:
         app: suggestion-server
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       containers:
       - name: suggestion

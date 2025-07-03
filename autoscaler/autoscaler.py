@@ -1,6 +1,6 @@
 import requests
 import time
-from k8s.k8s_client import K8sClient
+from utils.k8s_client import K8sClient
 import os
 
 SUGGESTION_SERVICE_URL = os.getenv("SUGGESTION_SERVICE_URL", "http://suggestion-service:5000/suggestion")

@@ -2,9 +2,8 @@ import requests
 from flask import Flask, request, jsonify
 import datetime
 import os
-from monitoring.prometheus.prometheus_client import PrometheusClient
-from k8s.k8s_client import K8sClient
-from rl_model.state_builder import StateBuilder
+from utils.prometheus_client import PrometheusClient
+from utils.k8s_client import K8sClient
 
 app = Flask(__name__)
 

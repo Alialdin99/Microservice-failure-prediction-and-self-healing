@@ -1,10 +1,11 @@
 FROM python:3.9-slim
 WORKDIR /app
 
-COPY requirements-suggestion.txt .
+COPY suggestion-server/requirements-suggestion.txt .
 RUN pip install --no-cache-dir -r requirements-suggestion.txt
 
-COPY . .
+COPY suggestion-server/ .
+COPY utils ./utils
 
 EXPOSE 5000 
 

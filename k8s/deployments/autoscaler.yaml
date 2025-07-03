@@ -37,6 +37,8 @@ spec:
     metadata:
       labels:
         app: custom-hpa-controller
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       serviceAccountName: custom-hpa-sa
       containers:

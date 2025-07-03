@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from stable_baselines3 import PPO
-from rl_model.state_builder import StateBuilder
+from utils.state_builder import StateBuilder
 from pathlib import Path
 
 app = Flask(__name__)
