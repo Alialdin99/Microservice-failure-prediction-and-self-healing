@@ -3,7 +3,7 @@ from kubernetes import client, config
 
 class K8sClient:
     def __init__(self, deployment_name, namespace):
-        config.load_kube_config()
+        config.load_incluster_config()
         self.k8s_api = client.AppsV1Api()
         self.deployment_name = deployment_name
         self.namespace = namespace
