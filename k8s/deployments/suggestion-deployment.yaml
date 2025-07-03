@@ -17,6 +17,7 @@ spec:
       containers:
       - name: suggestion
         image: marwanhabib/custom-hpa-suggestion-flask:v1
+        imagePullPolicy: Always
         ports:
         - containerPort: 5000
         env:

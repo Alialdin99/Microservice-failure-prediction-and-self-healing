@@ -41,7 +41,8 @@ spec:
       serviceAccountName: custom-hpa-sa
       containers:
       - name: controller
-        image: marwanhabibcustom-hpa-controller:v1
+        image: marwanhabib/custom-hpa-controller:v1
+        imagePullPolicy: Always
         env:
         - name: SUGGESTION_SERVICE_URL
           value: "http://suggestion-service:5000/suggestion"
