@@ -24,7 +24,7 @@ spec:
         - containerPort: 5000
         env:
         - name: PROMETHEUS_URL
-          value: "http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local"
+          value: "http://prometheus-nodeport.monitoring.svc.cluster.local:9090"
         - name: MODEL_SERVICE_URL
           value: "http://model-service:8000/predict"
 ---
