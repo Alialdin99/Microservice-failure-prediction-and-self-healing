@@ -4,8 +4,8 @@ metadata:
   name: nginx
   namespace: default
   annotations:
-    latencySoftConstraint: "-1"
-    latencyHardConstraint: "-1"
+    latencySoftConstraint: "200"
+    latencyHardConstraint: "600"
 spec:
   replicas: 1
   selector:

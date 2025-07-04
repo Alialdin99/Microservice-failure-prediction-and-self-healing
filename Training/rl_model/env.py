@@ -15,7 +15,7 @@ class MicroserviceEnv(gym.Env):
     def __init__(self, deployment_name='nginx', namespace='default'):
         super().__init__()
         load_dotenv()
-        self.max_replicas = TRAINING_CONFIG.get('max_replicas', 15)
+        self.max_replicas = TRAINING_CONFIG.get('max_replicas', 6)
         # Action space: 0=down, 1=nothing, 2=up
         self.action_space = spaces.Discrete(3)
         # Observation space: [cpu, mem, replicas, latency, rps]
@@ -29,13 +29,13 @@ class MicroserviceEnv(gym.Env):
         self.namespace = namespace
         self.prom_client = PrometheusClient()
         self.metric_window = TRAINING_CONFIG.get('metric_window', '30s')
-        self.action_interval = TRAINING_CONFIG.get('action_interval', 30)
+        self.action_interval = TRAINING_CONFIG.get('action_interval', 10)
         self.pod_counts = []
         self.steps = []
         self.current_step = 0
         self.max_steps = 200
         self.k8s_client = K8sClient(self.deployment_name, self.namespace)
-        self.chaos_manager = ChaosExperimentManager(self.k8s_client.k8s_api, self.deployment_name, self.namespace)
+        self.chaos_manager = ChaosExperimentManager(self.k8s_client.custom_api, self.deployment_name, self.namespace)
 
     def reset(self, seed=None, options=None):
         """
@@ -121,13 +121,13 @@ class MicroserviceEnv(gym.Env):
                 'reward': reward
             }
         except PodKillException as e:
-            print(f"Pod kill exception: {e}, Reward: -50")
+            print(f"Pod kill exception: {e}, Reward: -10")
             state = self._get_state()
-            return state, -50, True, False, {'error': 'All pods killed'}
+            return state, -10, True, False, {'error': 'All pods killed'}
         except KubernetesException as e:
-            print(f"Kubernetes API Error: {e.reason}, Reward: -50")
+            print(f"Kubernetes API Error: {e.reason}, Reward: -10")
             state = self._get_state()
-            return state, -50, True, False, {'error': e.reason}
+            return state, -10, True, False, {'error': e.reason}
         except Exception as e:
             print(f"Unexpected error in step: {str(e)}")
             return state, -10, True, False, {

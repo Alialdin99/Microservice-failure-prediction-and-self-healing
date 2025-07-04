@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k6-test-script
+  namespace: default
+data:
+  k6-test.js: |
+    import http from 'k6/http';
+    import { sleep } from 'k6';
+    export let options = {
+      stages: [
+        
+        { duration: '2m', target: 1000 },    // ramp up to 1,000 users over 2 minutes
+        { duration: '8m', target: 1000 },    // hold at 1,000 users for 8 minutes
+        { duration: '2m', target: 5000 },    // ramp up to 5,000 users over 2 minutes
+        { duration: '8m', target: 5000 },    // hold at 5,000 users for 8 minutes
+        { duration: '2m', target: 10000 },   // ramp up to 10,000 users over 2 minutes
+        { duration: '5m', target: 10000 },   // hold at 10,000 users for 5 minutes (spike)
+        { duration: '3m', target: 1000 },    // ramp down to 1,000 users over 3 minutes
+        { duration: '5m', target: 1000 },    // hold at 1,000 users for 5 minutes
+      ],
+    };
+    export default function () {
+      http.get('http://nginx.default.svc.cluster.local:80/');
+      sleep(1);
+    }
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k6-traffic-generator
+  namespace: default
+
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: k6-traffic-generator
+  template:
+    metadata:
+      labels:
+        app: k6-traffic-generator
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      containers:
+      - name: k6
+        image: grafana/k6:latest
+        command: ["k6", "run", "/scripts/k6-test.js"]
+        volumeMounts:
+        - name: k6-script
+          mountPath: /scripts
+      volumes:
+      - name: k6-script
+        configMap:
+          name: k6-test-script
+      restartPolicy: Always

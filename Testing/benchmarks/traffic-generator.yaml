@@ -9,11 +9,15 @@ data:
     import { sleep } from 'k6';
     export let options = {
       stages: [
-        { duration: '5m', target: 1000 },
-        { duration: '20m', target: 1000 },
-        { duration: '5m', target: 5000 },
-        { duration: '5m', target: 0 },
-        { duration: '5m', target: 0 },
+        
+        { duration: '2m', target: 1000 },    // ramp up to 1,000 users over 2 minutes
+        { duration: '8m', target: 1000 },    // hold at 1,000 users for 8 minutes
+        { duration: '2m', target: 5000 },    // ramp up to 5,000 users over 2 minutes
+        { duration: '8m', target: 5000 },    // hold at 5,000 users for 8 minutes
+        { duration: '2m', target: 10000 },   // ramp up to 10,000 users over 2 minutes
+        { duration: '5m', target: 10000 },   // hold at 10,000 users for 5 minutes (spike)
+        { duration: '3m', target: 1000 },    // ramp down to 1,000 users over 3 minutes
+        { duration: '5m', target: 1000 },    // hold at 1,000 users for 5 minutes
       ],
     };
     export default function () {
