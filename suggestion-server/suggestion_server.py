@@ -78,7 +78,14 @@ def health_check():
         "status": "healthy",
         "timestamp": datetime.datetime.utcnow().isoformat()
     })
+    
+async def log_rps():
+    while True:
+        metrics = fetch_prometheus_metrics(deployment=DEPLOYMENT, namespace=NAMESPACE)
+        logging.info(f"RPS: {metrics['rps']}")
+        await asyncio.sleep(10)
 
+log_rps()
 if __name__ == '__main__':
     # This block is for local testing. In production, Gunicorn runs the app.
     app.run(host='0.0.0.0', port=5000)
