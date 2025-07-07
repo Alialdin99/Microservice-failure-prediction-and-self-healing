@@ -16,10 +16,10 @@ spec:
     spec:
       containers:
       - name: model
-        image: marwanhabib/custom-autoscaler-model-flask:v1
+        image: marwanhabib/custom-autoscaler-model-flask:v2
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
-        imagePullPolicy: Always
 ---
 apiVersion: v1
 kind: Service
