@@ -20,6 +20,7 @@ spec:
       containers:
       - name: suggestion
         image: marwanhabib/custom-autoscaler-suggestion-flask:dummy
+        imagePullPolicy: Always
         ports:
         - containerPort: 5000
         env:

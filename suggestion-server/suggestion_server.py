@@ -5,6 +5,8 @@ import os
 from utils.prometheus_client import PrometheusClient
 from utils.k8s_client import K8sClient
 import logging
+import threading
+import time
 
 logging.basicConfig(level=logging.INFO)
 app = Flask(__name__)
@@ -12,6 +14,24 @@ app = Flask(__name__)
 # Configuration
 RL_API_URL = os.getenv('RL_API_URL', 'http://model-service:8000/predict') 
 
+# Deployment and namespace for RPS logging
+LOG_DEPLOYMENT = os.getenv('LOG_DEPLOYMENT', 'nginx')
+LOG_NAMESPACE = os.getenv('LOG_NAMESPACE', 'default')
+
+def log_rps_background():
+    prom_client = PrometheusClient()
+    rps_query = f'sum(rate(istio_requests_total{{reporter="destination", destination_workload="{LOG_DEPLOYMENT}"}}[1m]))'
+    while True:
+        try:
+            rps = prom_client.query(rps_query)
+            logging.info(f"[RPS-LOG] {LOG_NAMESPACE}/{LOG_DEPLOYMENT} RPS: {rps}")
+        except Exception as e:
+            logging.error(f"[RPS-LOG] Error fetching RPS: {e}")
+        time.sleep(10)
+
+# Start the RPS logging thread
+rps_thread = threading.Thread(target=log_rps_background, daemon=True)
+rps_thread.start()
 
 def fetch_prometheus_metrics(deployment, namespace):
     """Fetch metrics from Prometheus using PrometheusClient and add current replicas from Kubernetes"""
@@ -48,7 +68,7 @@ def get_rl_prediction(metrics):
 
 # Main endpoint for scaling recommendation
 @app.route('/suggestion', methods=['GET'])
-def get_suggestion():
+async def get_suggestion():
     """Endpoint for Kubernetes to get scaling recommendations"""
     try:
         deployment = request.args['deployment']
@@ -70,7 +90,6 @@ def get_suggestion():
     # 3. return suggested action
     return action
 
-
 # Health check endpoint
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -79,13 +98,7 @@ def health_check():
         "timestamp": datetime.datetime.utcnow().isoformat()
     })
     
-async def log_rps():
-    while True:
-        metrics = fetch_prometheus_metrics(deployment=DEPLOYMENT, namespace=NAMESPACE)
-        logging.info(f"RPS: {metrics['rps']}")
-        await asyncio.sleep(10)
 
-log_rps()
 if __name__ == '__main__':
     # This block is for local testing. In production, Gunicorn runs the app.
     app.run(host='0.0.0.0', port=5000)

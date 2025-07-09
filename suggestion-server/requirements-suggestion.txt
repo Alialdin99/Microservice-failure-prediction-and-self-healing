@@ -1,4 +1,4 @@
-flask
+flask[async]
 gunicorn
 requests
 prometheus-api-client
