@@ -4,7 +4,7 @@ import gymnasium as gym
 from gymnasium import spaces
 from kubernetes.client.rest import ApiException as KubernetesException
 from dotenv import load_dotenv
-from chaos_mesh.chaos_experiments import ChaosExperimentManager, PodKillException
+from benchmarks.chaos_mesh.chaos_experiments import ChaosExperimentManager, PodKillException
 from utils.k8s_client import K8sClient
 from utils.prometheus_client import PrometheusClient
 from .reward import RewardCalculator
