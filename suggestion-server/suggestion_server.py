@@ -5,8 +5,6 @@ import os
 from utils.prometheus_client import PrometheusClient
 from utils.k8s_client import K8sClient
 import logging
-import threading
-import time
 
 logging.basicConfig(level=logging.INFO)
 app = Flask(__name__)
@@ -14,24 +12,6 @@ app = Flask(__name__)
 # Configuration
 RL_API_URL = os.getenv('RL_API_URL', 'http://model-service:8000/predict') 
 
-# Deployment and namespace for RPS logging
-LOG_DEPLOYMENT = os.getenv('LOG_DEPLOYMENT', 'nginx')
-LOG_NAMESPACE = os.getenv('LOG_NAMESPACE', 'default')
-
-def log_rps_background():
-    prom_client = PrometheusClient()
-    rps_query = f'sum(rate(istio_requests_total{{reporter="destination", destination_workload="{LOG_DEPLOYMENT}"}}[1m]))'
-    while True:
-        try:
-            rps = prom_client.query(rps_query)
-            logging.info(f"[RPS-LOG] {LOG_NAMESPACE}/{LOG_DEPLOYMENT} RPS: {rps}")
-        except Exception as e:
-            logging.error(f"[RPS-LOG] Error fetching RPS: {e}")
-        time.sleep(10)
-
-# Start the RPS logging thread
-rps_thread = threading.Thread(target=log_rps_background, daemon=True)
-rps_thread.start()
 
 def fetch_prometheus_metrics(deployment, namespace):
     """Fetch metrics from Prometheus using PrometheusClient and add current replicas from Kubernetes"""
@@ -85,7 +65,7 @@ async def get_suggestion():
         }), 500
     # 2. Get prediction from RL model
     action = get_rl_prediction(metrics)
-    logging.info(f'Action: {action}')
+    logging.info(f'Action: {action}, RPS: {metrics['rps']}')
     
     # 3. return suggested action
     return action
