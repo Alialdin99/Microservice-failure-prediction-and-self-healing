@@ -26,7 +26,6 @@ kind: Deployment
 metadata:
   name: k6-traffic-generator
   namespace: default
-
 spec:
   replicas: 1
   selector:
