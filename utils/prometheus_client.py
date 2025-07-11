@@ -4,7 +4,7 @@ from prometheus_api_client import PrometheusConnect
 class PrometheusClient:
     def __init__(self, url=None):
         if url is None:
-            url = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
+            url = os.getenv("PROMETHEUS_URL", "http://prometheus-nodeport.monitoring.svc.cluster.local:9090")
         self.prom = PrometheusConnect(url=url)
 
     def query(self, query):

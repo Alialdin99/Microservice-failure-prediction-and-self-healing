@@ -1,0 +1,4 @@
+flask
+gunicorn
+stable-baselines3[extra]
+numpy

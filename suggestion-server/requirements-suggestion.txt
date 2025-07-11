@@ -1,0 +1,6 @@
+flask[async]
+gunicorn
+requests
+prometheus-api-client
+kubernetes
+numpy

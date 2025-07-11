@@ -9,9 +9,10 @@ data:
     import { sleep } from 'k6';
     export let options = {
       stages: [
-        { duration: '5m', target: 100 },
-        { duration: '30m', target: 100 },
-        { duration: '5m', target: 0 },
+        { duration: '3m', target: 3000 },
+        { duration: '3m', target: 3000 },
+        { duration: '2m', target: 0 },
+        { duration: '2m', target: 0 }
       ],
     };
     export default function () {
@@ -34,6 +35,8 @@ spec:
     metadata:
       labels:
         app: k6-traffic-generator
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       containers:
       - name: k6
