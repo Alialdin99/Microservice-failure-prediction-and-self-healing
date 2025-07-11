@@ -44,7 +44,7 @@ def get_rl_prediction(metrics):
         return response.json()
     except Exception as e:
         print(f"RL API error : {str(e)}")
-    return 1
+    return {'action': 0}
 
 # Main endpoint for scaling recommendation
 @app.route('/suggestion', methods=['GET'])
@@ -64,11 +64,11 @@ async def get_suggestion():
             "message": "Failed to fetch metrics from Prometheus"
         }), 500
     # 2. Get prediction from RL model
-    action = get_rl_prediction(metrics)
-    logging.info(f'Action: {action}, RPS: {metrics['rps']}')
+    action = get_rl_prediction(metrics).get('action')
+    logging.info(f"Action: {action}, Replicas: {metrics['replicas']}, Latency: {metrics['latency']}, RPS: {metrics['rps']}")
     
     # 3. return suggested action
-    return action
+    return {'action': action}
 
 # Health check endpoint
 @app.route('/health', methods=['GET'])

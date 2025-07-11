@@ -19,7 +19,7 @@ spec:
       serviceAccountName: custom-autoscaler-sa
       containers:
       - name: suggestion
-        image: marwanhabib/custom-autoscaler-suggestion-flask:v1
+        image: marwanhabib/custom-autoscaler-suggestion-flask:v2
         imagePullPolicy: Always
         ports:
         - containerPort: 5000
